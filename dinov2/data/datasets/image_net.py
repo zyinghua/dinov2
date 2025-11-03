@@ -25,11 +25,19 @@ class _Split(Enum):
 
     @property
     def length(self) -> int:
+        # for imagenet-100
         split_lengths = {
-            _Split.TRAIN: 1_281_167,
-            _Split.VAL: 50_000,
-            _Split.TEST: 100_000,
+           _Split.TRAIN: 50000,
+           _Split.VAL: 50_00,
+           #50_00
+           _Split.TEST: 100_00,
         }
+        # for imagenet-1k
+        # split_lengths = {
+        #     _Split.TRAIN: 1_281_167,
+        #     _Split.VAL: 50_000,
+        #     _Split.TEST: 100_000,
+        # }
         return split_lengths[self]
 
     def get_dirname(self, class_id: Optional[str] = None) -> str:
