@@ -1,0 +1,10 @@
+name: DiT
+dependencies:
+  - python>=3.8
+  - pip
+  - pip:
+      - torch>=1.13
+      - torchvision
+      - timm
+      - diffusers
+      - accelerate
