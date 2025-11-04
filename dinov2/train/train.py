@@ -55,6 +55,18 @@ For python-based LazyConfig, use "path.key=value".
         help="Output directory to save logs and checkpoints",
     )
 
+    parser.add_argument(
+        "--max_to_keep",
+        type=int,
+        default=5
+    )
+
+    parser.add_argument(
+        "--save_frequency",
+        type=int,
+        default=5
+    )    
+
     return parser
 
 
@@ -131,7 +143,7 @@ def do_test(cfg, model, iteration):
         torch.save({"teacher": new_state_dict}, teacher_ckp_path)
 
 
-def do_train(cfg, model, resume=False):
+def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5):
     model.train()
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
@@ -157,9 +169,9 @@ def do_train(cfg, model, resume=False):
 
     periodic_checkpointer = PeriodicCheckpointer(
         checkpointer,
-        period=3 * OFFICIAL_EPOCH_LENGTH,
+        period=save_frequency * OFFICIAL_EPOCH_LENGTH,
         max_iter=max_iter,
-        max_to_keep=3,
+        max_to_keep=max_to_keep,
     )
 
     # setup data preprocessing
@@ -226,6 +238,7 @@ def do_train(cfg, model, resume=False):
         max_iter,
         start_iter,
     ):
+        #print(f"current_epoch: {iteration // cfg.train.OFFICIAL_EPOCH_LENGTH}")
         current_batch_size = data["collated_global_crops"].shape[0] / 2
         if iteration > max_iter:
             return
@@ -310,8 +323,7 @@ def main(args):
         )
         return do_test(cfg, model, f"manual_{iteration}")
 
-    do_train(cfg, model, resume=not args.no_resume)
-
+    do_train(cfg, model, resume=not args.no_resume, max_to_keep=args.max_to_keep, save_frequency=args.save_frequency)
 
 if __name__ == "__main__":
     args = get_args_parser(add_help=True).parse_args()
