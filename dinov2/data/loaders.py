@@ -56,6 +56,9 @@ def _parse_dataset_str(dataset_str: str):
         class_ = ImageNet
         if "split" in kwargs:
             kwargs["split"] = ImageNet.Split[kwargs["split"]]
+        # If extra is not provided, default to root directory
+        if "extra" not in kwargs:
+            kwargs["extra"] = kwargs.get("root", "")
     elif name == "ImageNet22k":
         class_ = ImageNet22k
     else:

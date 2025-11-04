@@ -17,11 +17,19 @@ from .extended import ExtendedVisionDataset
 logger = logging.getLogger("dinov2")
 _Target = int
 
+# Image format (can be set via args.img_format)
+_img_format = ".png"
+
 
 class _Split(Enum):
     TRAIN = "train"
     VAL = "val"
     TEST = "test"  # NOTE: torchvision does not support the test split
+    
+    @property
+    def img_format(self) -> str:
+        """Image format property that reads from module-level variable."""
+        return _img_format
 
     @property
     def length(self) -> int:
@@ -49,7 +57,7 @@ class _Split(Enum):
             basename = f"{class_id}_{actual_index}"
         else:  # self in (_Split.VAL, _Split.TEST):
             basename = f"ILSVRC2012_{self.value}_{actual_index:08d}"
-        return os.path.join(dirname, basename + ".JPEG")
+        return os.path.join(dirname, basename + self.img_format)
 
     def parse_image_relpath(self, image_relpath: str) -> Tuple[str, int]:
         assert self != _Split.TEST
