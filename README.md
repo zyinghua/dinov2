@@ -1,668 +1,316 @@
-:new: [2025-08-14] *Please check out the more recent [DINOv3](https://github.com/facebookresearch/dinov3) effort continuing this line of work.*
+# DINOv2 Repository General Guide
 
-[2025-06-11] *Added dino.txt inference code, following [DINOv2 Meets Text: A Unified Framework for Image- and Pixel-Level Vision-Language Alignment](https://arxiv.org/abs/2412.16334).*
+> **Note:** This repository inherits the original DINOv2 repository. For full information about DINOv2, please visit the [original DINOv2 repository](https://github.com/facebookresearch/dinov2).
 
-[2023-10-26] *Added DINOv2 backbones with registers, following [Vision Transformers Need Registers](https://arxiv.org/abs/2309.16588).*
+This guide explains how to set up the environment and train a DINOv2 model from scratch.
 
-# DINOv2: Learning Robust Visual Features without Supervision
+## Step 1: Environment Setup
 
-**[Meta AI Research, FAIR](https://ai.facebook.com/research/)**
+### 1.1 Create Conda Environment
 
-Maxime Oquab,
-Timothée Darcet,
-Théo Moutakanni,
-Huy V. Vo,
-Marc Szafraniec,
-Vasil Khalidov,
-Patrick Labatut,
-Armand Joulin,
-Piotr Bojanowski
+Create a new conda environment with Python 3.9:
 
-[[`Paper #1`](https://arxiv.org/abs/2304.07193)] [`Paper #2`](https://arxiv.org/abs/2309.16588)] [[`Blog`](https://ai.facebook.com/blog/dino-v2-computer-vision-self-supervised-learning/)] [[`Demo`](https://dinov2.metademolab.com)] [[`BibTeX`](#citing-dinov2)]
-
-PyTorch implementation and pretrained models for DINOv2. For details, see the papers: **[DINOv2: Learning Robust Visual Features without Supervision](https://arxiv.org/abs/2304.07193)** and **[Vision Transformers Need Registers](https://arxiv.org/abs/2309.16588)**.
-
-DINOv2 models produce high-performance visual features that can be directly employed with classifiers as simple as linear layers on a variety of computer vision tasks; these visual features are robust and perform well across domains without any requirement for fine-tuning. The models were pretrained on a dataset of 142 M images without using any labels or annotations.
-
-https://github.com/facebookresearch/dinov2/assets/60359573/f168823e-7922-415a-b429-578badf5c356
-
-<div align="center">
-  Visualization of the three first principal components of the patch features of all frames, mapped to RGB values.
-</div>
-
-## Pretrained models
-
-<table style="margin: auto">
-  <thead>
-    <tr>
-      <th>model</th>
-      <th># of<br />params</th>
-      <th>with<br />registers</th>
-      <th>ImageNet<br />k-NN</th>
-      <th>ImageNet<br />linear</th>
-      <th>download</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>ViT-S/14 distilled</td>
-      <td align="right">21 M</td>
-      <td align="center">:x:</td>
-      <td align="right">79.0%</td>
-      <td align="right">81.1%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_pretrain.pth">backbone only</a></td>
-    </tr>
-    <tr>
-      <td>ViT-S/14 distilled</td>
-      <td align="right">21 M</td>
-      <td align="center">:white_check_mark:</td>
-      <td align="right">79.1%</td>
-      <td align="right">80.9%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_reg4_pretrain.pth">backbone only</a></td>
-    </tr>
-    <tr>
-      <td>ViT-B/14 distilled</td>
-      <td align="right">86 M</td>
-      <td align="center">:x:</td>
-      <td align="right">82.1%</td>
-      <td align="right">84.5%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_pretrain.pth">backbone only</a></td>
-    </tr>
-    <tr>
-      <td>ViT-B/14 distilled</td>
-      <td align="right">86 M</td>
-      <td align="center">:white_check_mark:</td>
-      <td align="right">82.0%</td>
-      <td align="right">84.6%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_pretrain.pth">backbone only</a></td>
-    </tr>
-    <tr>
-      <td>ViT-L/14 distilled</td>
-      <td align="right">300 M</td>
-      <td align="center">:x:</td>
-      <td align="right">83.5%</td>
-      <td align="right">86.3%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_pretrain.pth">backbone only</a></td>
-    </tr>
-    <tr>
-      <td>ViT-L/14 distilled</td>
-      <td align="right">300 M</td>
-      <td align="center">:white_check_mark:</td>
-      <td align="right">83.8%</td>
-      <td align="right">86.7%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_pretrain.pth">backbone only</a></td>
-    </tr>
-    <tr>
-      <td>ViT-g/14</td>
-      <td align="right">1,100 M</td>
-      <td align="center">:x:</td>
-      <td align="right">83.5%</td>
-      <td align="right">86.5%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_pretrain.pth">backbone only</a></td>
-    </tr>
-    <tr>
-      <td>ViT-g/14</td>
-      <td align="right">1,100 M</td>
-      <td align="center">:white_check_mark:</td>
-      <td align="right">83.7%</td>
-      <td align="right">87.1%</td>
-      <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_reg4_pretrain.pth">backbone only</a></td>
-    </tr>
-  </tbody>
-</table>
-
-### Pretrained backbones (via PyTorch Hub)
-
-Please follow the instructions [here](https://pytorch.org/get-started/locally/) to install PyTorch (the only required dependency for loading the model). Installing PyTorch with CUDA support is strongly recommended.
-
-A corresponding [model card](MODEL_CARD.md) is included in the repository.
-
-```python
-import torch
-
-# DINOv2
-dinov2_vits14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-dinov2_vitb14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-dinov2_vitl14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
-dinov2_vitg14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14')
-
-# DINOv2 with registers
-dinov2_vits14_reg = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
-dinov2_vitb14_reg = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_reg')
-dinov2_vitl14_reg = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg')
-dinov2_vitg14_reg = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_reg')
-```
-
-### Pretrained heads - Image classification
-
-<table style="margin: auto">
-  <thead>
-    <tr>
-      <th rowspan="2">backbone</th>
-      <th rowspan="2">with<br />registers</th>
-      <th>download</th>
-    </tr>
-    <tr>
-      <th>ImageNet</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>ViT-S/14 distilled</td>
-      <td align="center">:x:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_linear4_head.pth">4 layers</a>)
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-S/14 distilled</td>
-      <td align="center">:white_check_mark:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_reg4_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_reg4_linear4_head.pth">4 layers</a>)
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-B/14 distilled</td>
-      <td align="center">:x:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_linear4_head.pth">4 layers</a>)
-    </tr>
-    <tr>
-      <td>ViT-B/14 distilled</td>
-      <td align="center">:white_check_mark:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_linear4_head.pth">4 layers</a>)
-    </tr>
-    <tr>
-      <td>ViT-L/14 distilled</td>
-      <td align="center">:x:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_linear4_head.pth">4 layers</a>)
-    </tr>
-    <tr>
-      <td>ViT-L/14 distilled</td>
-      <td align="center">:white_check_mark:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_linear4_head.pth">4 layers</a>)
-    </tr>
-    <tr>
-      <td>ViT-g/14</td>
-      <td align="center">:x:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_linear4_head.pth">4 layers</a>)
-    </tr>
-    <tr>
-      <td>ViT-g/14</td>
-      <td align="center">:white_check_mark:</td>
-      <td>
-        linear head (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_lreg4_inear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_reg4_linear4_head.pth">4 layers</a>)
-    </tr>
-  </tbody>
-</table>
-
-The (full) classifier models can be loaded via PyTorch Hub:
-
-```python
-import torch
-
-# DINOv2
-dinov2_vits14_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_lc')
-dinov2_vitb14_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_lc')
-dinov2_vitl14_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_lc')
-dinov2_vitg14_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_lc')
-
-# DINOv2 with registers
-dinov2_vits14_reg_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg_lc')
-dinov2_vitb14_reg_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14_reg_lc')
-dinov2_vitl14_reg_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg_lc')
-dinov2_vitg14_reg_lc = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_reg_lc')
-```
-
-### Pretrained heads - Depth estimation
-
-<table style="margin: auto">
-  <thead>
-    <tr>
-      <th rowspan="2">backbone</th>
-      <th colspan="2">download head</th>
-    </tr>
-    <tr>
-      <th>NYUd</th>
-      <th>KITTI</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>ViT-S/14 distilled</td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_nyu_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_nyu_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_nyu_dpt_head.pth">DPT</a>
-      </td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_kitti_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_kitti_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_kitti_dpt_head.pth">DPT</a>
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-B/14 distilled</td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_nyu_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_nyu_dpt_head.pth">DPT</a>
-      </td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_kitti_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_kitti_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_kitti_dpt_head.pth">DPT</a>
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-L/14 distilled</td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_nyu_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_nyu_dpt_head.pth">DPT</a>
-      </td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_kitti_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_kitti_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_kitti_dpt_head.pth">DPT</a>
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-g/14</td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_nyu_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_nyu_dpt_head.pth">DPT</a>
-      </td>
-      <td>
-        linear (<a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_kitti_linear_head.pth">1 layer</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_kitti_linear4_head.pth">4 layers</a>),
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_kitti_dpt_head.pth">DPT</a>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-### Pretrained heads - Semantic segmentation
-
-<table style="margin: auto">
-  <thead>
-    <tr>
-      <th rowspan="2">backbone</th>
-      <th>download model</th>
-      <th colspan="2">download head</th>
-    </tr>
-    <tr>
-      <th>ADE20K</th>
-      <th>ADE20K</th>
-      <th>VOC2012</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>ViT-S/14 distilled</td>
-      <td></td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_ade20k_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_ade20k_ms_head.pth">multi-scale</a>
-      </td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_voc2012_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_voc2012_ms_head.pth">multi-scale</a>
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-B/14 distilled</td>
-      <td></td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_ade20k_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_ade20k_ms_head.pth">multi-scale</a>
-      </td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_voc2012_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_voc2012_ms_head.pth">multi-scale</a>
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-L/14 distilled</td>
-      <td></td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_ade20k_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_ade20k_ms_head.pth">multi-scale</a>
-      </td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_voc2012_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_voc2012_ms_head.pth">multi-scale</a>
-      </td>
-    </tr>
-    <tr>
-      <td>ViT-g/14</td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_ade20k_m2f.pth">Mask2Former</a>
-      </td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_ade20k_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_ade20k_ms_head.pth">multi-scale</a>
-      </td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_voc2012_linear_head.pth">linear</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_voc2012_ms_head.pth">multi-scale</a>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-
-### Pretrained heads - Zero-shot tasks with dino.txt
-
-<table style="margin: auto">
-  <thead>
-    <tr>
-      <th rowspan="2">backbone</th>
-      <th rowspan="2">with<br />registers</th>
-      <th>download</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>ViT-L/14 distilled</td>
-      <td align="center">:white_check_mark:</td>
-      <td>
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_dinotxt_tet1280d20h24l_vision_head.pth">vision head</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_dinotxt_tet1280d20h24l_text_encoder.pth">text model</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/thirdparty/bpe_simple_vocab_16e6.txt.gz">vocabulary</a>,
-        <a href="https://dl.fbaipublicfiles.com/dinov2/thirdparty/LICENSE">vocabulary license</a>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-The (full) dino.txt model can be loaded via PyTorch Hub:
-
-```python
-import torch
-
-# DINOv2
-dinov2_vitl14_reg4_dinotxt_tet1280d20h24l = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg4_dinotxt_tet1280d20h24l')
-```
-
-
-## Installation
-
-The training and evaluation code requires PyTorch 2.0 and [xFormers](https://github.com/facebookresearch/xformers) 0.0.18 as well as a number of other 3rd party packages. Note that the code has only been tested with the specified versions and also expects a Linux environment. To setup all the required dependencies for training and evaluation, please follow the instructions below:
-
-*[conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html)* **(Recommended)** - Clone the repository and then create and activate a `dinov2` conda environment using the provided environment definition:
-
-```shell
-conda env create -f conda.yaml
+```bash
+conda create -n dinov2 python=3.9 -y
 conda activate dinov2
 ```
 
-*[pip](https://pip.pypa.io/en/stable/getting-started/)* - Clone the repository and then use the provided `requirements.txt` to install the dependencies:
+or 
 
-```shell
-pip install -r requirements.txt
+```bash
+conda create -p /root/dinov2 python=3.9 -y
+conda activate dinov2
 ```
 
-For dense tasks (depth estimation and semantic segmentation), there are additional dependencies (specific versions of `mmcv` and `mmsegmentation`) which are captured in the `extras` dependency specifications:
+**Note:** Python 3.9 is required due to compatibility with the codebase (type hints use `Optional` instead of `|` syntax).
 
-*[conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html)* **(Recommended)**:
+### 1.2 Install Dependencies
 
-```shell
-conda env create -f conda-extras.yaml
-conda activate dinov2-extras
+Install the required packages:
+
+```bash
+cd /path/to/dinov2
+pip install -r envs/requirements.txt
 ```
 
-*[pip](https://pip.pypa.io/en/stable/getting-started/)*:
+The `requirements.txt` includes:
+- PyTorch (with CUDA support)
+- torchvision
+- xformers
+- fvcore
+- iopath
+- omegaconf
+- torchmetrics
+- And other dependencies
 
-```shell
-pip install -r requirements.txt -r requirements-extras.txt
+### 1.3 Verify Installation
+
+Check that PyTorch can see your GPU:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.device_count())"
 ```
 
-## Data preparation
+## Step 2: Prepare Your Dataset
 
-### ImageNet-1k
+### 2.1 Dataset Structure
 
-The root directory of the dataset should hold the following contents:
+Your dataset should have this structure:
 
-- `<ROOT>/test/ILSVRC2012_test_00000001.JPEG`
-- `<ROOT>/test/[..]`
-- `<ROOT>/test/ILSVRC2012_test_00100000.JPEG`
-- `<ROOT>/train/n01440764/n01440764_10026.JPEG`
-- `<ROOT>/train/[...]`
-- `<ROOT>/train/n15075141/n15075141_9993.JPEG`
-- `<ROOT>/val/n01440764/ILSVRC2012_val_00000293.JPEG`
-- `<ROOT>/val/[...]`
-- `<ROOT>/val/n15075141/ILSVRC2012_val_00049174.JPEG`
-- `<ROOT>/labels.txt`
+```
+dataset_name/
+├── root/              # Main dataset directory
+│   ├── train/         # Training images
+│   │   ├── class_id_1/
+│   │   │   ├── class_id_1_0.png
+│   │   │   ├── class_id_1_1.png
+│   │   │   └── ...
+│   │   ├── class_id_2/
+│   │   └── ...
+│   ├── val/           # Validation images (optional)
+│   └── labels.txt     # CSV file with class_id,class_name pairs
+└── extra/             # Metadata directory (will be created)
+```
 
-The provided dataset implementation expects a few additional metadata files to be present under the extra directory:
+The `labels.txt` file should contain:
+```
+n01440764,tench
+n01443537,goldfish
+...
+```
 
-- `<EXTRA>/class-ids-TRAIN.npy`
-- `<EXTRA>/class-ids-VAL.npy`
-- `<EXTRA>/class-names-TRAIN.npy`
-- `<EXTRA>/class-names-VAL.npy`
-- `<EXTRA>/entries-TEST.npy`
-- `<EXTRA>/entries-TRAIN.npy`
-- `<EXTRA>/entries-VAL.npy`
+### 2.2 Generate Metadata
 
-These metadata files can be generated (once) with the following lines of Python code:
+The dataset requires metadata files (`.npy` files) to be generated. Create a script `process_metadata.py`:
 
 ```python
 from dinov2.data.datasets import ImageNet
 
+# Replace these paths with your actual dataset paths
+ROOT_PATH = "/path/to/dataset/root"
+EXTRA_PATH = "/path/to/dataset/extra"
+
 for split in ImageNet.Split:
-    dataset = ImageNet(split=split, root="<ROOT>", extra="<EXTRA>")
+    dataset = ImageNet(split=split, root=ROOT_PATH, extra=EXTRA_PATH)
     dataset.dump_extra()
 ```
 
-Note that the root and extra directories do not have to be distinct directories.
+Run the metadata generation:
 
-### ImageNet-22k
-
-Please adapt the [dataset class](dinov2/data/datasets/image_net_22k.py) to match your local setup.
-
-<br />
-
-:warning: To execute the commands provided in the next sections for training and evaluation, the `dinov2` package should be included in the Python module search path, i.e. simply prefix the command to run with `PYTHONPATH=.`.
-
-## Training
-
-### Fast setup: training DINOv2 ViT-L/16 on ImageNet-1k
-
-Run DINOv2 training on 4 A100-80GB nodes (32 GPUs) in a SLURM cluster environment with submitit:
-
-```shell
-python dinov2/run/train/train.py \
-    --nodes 4 \
-    --config-file dinov2/configs/train/vitl16_short.yaml \
-    --output-dir <PATH/TO/OUTPUT/DIR> \
-    train.dataset_path=ImageNet:split=TRAIN:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
+```bash
+python process_metadata.py
 ```
 
-Training time is approximately 1 day and the resulting checkpoint should reach 81.6% on k-NN eval and 82.9% on linear eval.
+This will create files in the `extra/` directory:
+- `entries-TRAIN.npy`
+- `entries-VAL.npy` (if you have validation data)
+- `class-ids-TRAIN.npy`
+- `class-names-TRAIN.npy`
 
-The training code saves the weights of the teacher in the `eval` folder every 12500 iterations for evaluation.
+### 2.3 Update Dataset Length (if needed - e.g., for ImageNet-100)
 
-### Long setup: training DINOv2 ViT-L/14 on ImageNet-22k
+If your dataset has a different number of images, update the split lengths in `dinov2/data/datasets/image_net.py`:
 
-Run DINOv2 training on 12 A100-80GB nodes (96 GPUs) in a SLURM cluster environment with submitit:
+Find the `length` property in the `_Split` class (around line 35) and update it:
 
-```shell
-python dinov2/run/train/train.py \
-    --nodes 12 \
-    --config-file dinov2/configs/train/vitl14.yaml \
-    --output-dir <PATH/TO/OUTPUT/DIR> \
-    train.dataset_path=ImageNet22k:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
+```python
+@property
+def length(self) -> int:
+    # For your custom dataset, update these numbers
+    split_lengths = {
+       _Split.TRAIN: 50000,  # Update with your actual training set size
+       _Split.VAL: 5000,     # Update with your actual validation set size
+       _Split.TEST: 10000,   # Update if you have a test set
+    }
+    return split_lengths[self]
 ```
 
-Training time is approximately 3.3 days and the resulting checkpoint should reach 82.0% on k-NN eval and 84.5% on linear eval.
+## Step 3: Configure Training
 
-The training code saves the weights of the teacher in the `eval` folder every 12500 iterations for evaluation.
+### 3.1 Config File Structure
 
+DINOv2 uses a hierarchical config system:
+- **Base config**: `dinov2/configs/ssl_default_config.yaml` - Contains all default settings
+- **Training configs**: `dinov2/configs/train/*.yaml` - Training-specific overrides (e.g., `vits16.yaml`)
 
-## Evaluation
+The config files are merged, with training configs overriding base config values.
 
-The training code regularly saves the teacher weights. In order to evaluate the model, run the following evaluation on a single node:
+### 3.2 Training Config Files
 
-### k-NN classification on ImageNet-1k
+Training configs are located in `dinov2/configs/train/`:
 
-```shell
-python dinov2/run/eval/knn.py \
-    --config-file <PATH/TO/OUTPUT/DIR>/config.yaml \
-    --pretrained-weights <PATH/TO/OUTPUT/DIR>/eval/training_24999/teacher_checkpoint.pth \
-    --output-dir <PATH/TO/OUTPUT/DIR>/eval/training_24999/knn \
-    --train-dataset ImageNet:split=TRAIN:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET> \
-    --val-dataset ImageNet:split=VAL:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
+- `vits16.yaml` - ViT-S/16 configuration
+- `vitl14.yaml` - ViT-L/14 configuration
+- `vitg14.yaml` - ViT-G/14 configuration
+- etc.
+
+Example training config (`dinov2/configs/train/vits16.yaml`):
+
+```yaml
+train:
+  batch_size_per_gpu: 10
+student:
+  arch: vit_small
+  patch_size: 16
+  drop_path_rate: 0
+optim:
+  epochs: 200
+evaluation:
+  eval_period_iterations: 6250
 ```
 
-### Logistic regression classification on ImageNet-1k
+### 3.3 Base Config
 
-```shell
-python dinov2/run/eval/log_regression.py \
-    --config-file <PATH/TO/OUTPUT/DIR>/config.yaml \
-    --pretrained-weights <PATH/TO/OUTPUT/DIR>/eval/training_24999/teacher_checkpoint.pth \
-    --output-dir <PATH/TO/OUTPUT/DIR>/eval/training_24999/logreg \
-    --train-dataset ImageNet:split=TRAIN:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET> \
-    --val-dataset ImageNet:split=VAL:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
+The base config (`dinov2/configs/ssl_default_config.yaml`) contains:
+- Model architecture details
+- Training hyperparameters (learning rate, weight decay, etc.)
+- Data augmentation settings (crop sizes, scales)
+- Optimizer settings
+- FSDP configuration
+
+### 3.4 Override Config Values
+
+You can override config values via command line using the `key=value` syntax:
+
+```bash
+train.batch_size_per_gpu=20 \
+optim.epochs=100 \
+train.OFFICIAL_EPOCH_LENGTH=1250
 ```
 
-### Linear classification with data augmentation on ImageNet-1k
+## Step 4: Create Training Script
 
-```shell
-python dinov2/run/eval/linear.py \
-    --config-file <PATH/TO/OUTPUT/DIR>/config.yaml \
-    --pretrained-weights <PATH/TO/OUTPUT/DIR>/eval/training_24999/teacher_checkpoint.pth \
-    --output-dir <PATH/TO/OUTPUT/DIR>/eval/training_24999/linear \
-    --train-dataset ImageNet:split=TRAIN:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET> \
-    --val-dataset ImageNet:split=VAL:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
+### 4.1 Basic Training Script
+
+Create a training script (e.g., `train_local_vits_in100_base.sh`):
+
+```bash
+#!/bin/bash
+
+# Set PYTHONPATH to find the dinov2 module
+export PYTHONPATH=/path/to/dinov2:$PYTHONPATH
+
+# Training ViT-S on ImageNet-100
+torchrun --nproc_per_node=1 \
+    dinov2/run/train/local_train.py \
+    --config-file dinov2/configs/train/vits16.yaml \
+    --output-dir /path/to/output/directory \
+    --save_frequency 10 \
+    --max_to_keep 10 \
+    train.dataset_path=ImageNet:split=TRAIN:root=/path/to/dataset/root:extra=/path/to/dataset/extra
 ```
 
-We release the weights from evaluating the different models:
+### 4.2 Script Parameters
 
-<table style="margin: auto">
-  <tr>
-    <th>model</th>
-    <th>with<br />registers</th>
-    <th>ImageNet<br />top-1</th>
-    <th>linear evaluation</th>
-  </tr>
-  <tr>
-    <td>ViT-S/14 distilled</td>
-    <td align="center">:x:</td>
-    <td align="right">81.1%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_linear_head.pth">linear head weights</a></td>
-  </tr>
-  <tr>
-    <td>ViT-S/14 distilled</td>
-    <td align="center">:white_check_mark:</td>
-    <td align="right">80.8%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_reg4_linear_head.pth">linear head weights</a></td>
-  </tr>
-  <tr>
-    <td>ViT-B/14 distilled</td>
-    <td align="center">:x:</td>
-    <td align="right">84.5%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_linear_head.pth">linear head weights</a></td>
-  </tr>
-  <tr>
-    <td>ViT-B/14 distilled</td>
-    <td align="center">:white_check_mark:</td>
-    <td align="right">84.4%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_linear_head.pth">linear head weights</a></td>
-  </tr>
-  <tr>
-    <td>ViT-L/14 distilled</td>
-    <td align="center">:x:</td>
-    <td align="right">86.3%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_linear_head.pth">linear head weights</a></td>
-  </tr>
-  <tr>
-    <td>ViT-L/14 distilled</td>
-    <td align="center">:white_check_mark:</td>
-    <td align="right">86.5%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_linear_head.pth">linear head weights</a></td>
-  </tr>
-  <tr>
-    <td>ViT-g/14</td>
-    <td align="center">:x:</td>
-    <td align="right">86.5%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_linear_head.pth">linear head weights</a></td>
-  </tr>
-  <tr>
-    <td>ViT-g/14</td>
-    <td align="center">:white_check_mark:</td>
-    <td align="right">87.0%</td>
-    <td><a href="https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_reg4_linear_head.pth">linear head weights</a></td>
-  </tr>
-</table>
+- `--nproc_per_node=1`: Number of GPUs per node (change to 4 for 4 GPUs)
+- `--config-file`: Path to training config file
+- `--output-dir`: Directory to save checkpoints and logs
+- `--save_frequency`: Save checkpoint every N "official epochs" (each epoch = 1250 iterations)
+- `--max_to_keep`: Maximum number of checkpoints to keep
+- `train.dataset_path`: Dataset path in format `ImageNet:split=TRAIN:root=<root>:extra=<extra>`
 
-The performance of the provided pretrained model weights can be evaluated as follows on ImageNet-1k:
+### 4.3 Multi-GPU Training
 
-```shell
-python dinov2/run/eval/linear.py \
-    --config-file dinov2/configs/eval/vitg14_pretrain.yaml \
-    --pretrained-weights https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_pretrain.pth \
-    --train-dataset ImageNet:split=TRAIN:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET> \
-    --val-dataset ImageNet:split=VAL:root=<PATH/TO/DATASET>:extra=<PATH/TO/DATASET>
+For multi-GPU training, change `--nproc_per_node`:
+
+```bash
+torchrun --nproc_per_node=4 \
+    dinov2/run/train/local_train.py \
+    ...
 ```
 
-## Notebooks
+### 4.4 Make Script Executable
 
-A few notebooks are provided to help the community leverage the models and code:
-
-<ul>
-  <li><a href="https://github.com/facebookresearch/dinov2/blob/main/notebooks/depth_estimation.ipynb">Depth estimation</a> - How to load and use the depth heads in combination with a matching backbone via mmcv</li>
-  <li><a href="https://github.com/facebookresearch/dinov2/blob/main/notebooks/semantic_segmentation.ipynb">Semantic segmentation</a> - How to load and use the segmentation heads in combination with a matching backbone via mmcv, and also how to load and use the Mask2Former-based segmentation model trained on ADE20K</li>
-</ul>
-
-## License
-
-DINOv2 code and model weights are released under the Apache License 2.0. See [LICENSE](LICENSE) for additional details.
-
-## Contributing
-
-See [contributing](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md).
-
-## Citing DINOv2
-
-If you find this repository useful, please consider giving a star :star: and citation :t-rex::
-
-```
-@misc{oquab2023dinov2,
-  title={DINOv2: Learning Robust Visual Features without Supervision},
-  author={Oquab, Maxime and Darcet, Timothée and Moutakanni, Theo and Vo, Huy V. and Szafraniec, Marc and Khalidov, Vasil and Fernandez, Pierre and Haziza, Daniel and Massa, Francisco and El-Nouby, Alaaeldin and Howes, Russell and Huang, Po-Yao and Xu, Hu and Sharma, Vasu and Li, Shang-Wen and Galuba, Wojciech and Rabbat, Mike and Assran, Mido and Ballas, Nicolas and Synnaeve, Gabriel and Misra, Ishan and Jegou, Herve and Mairal, Julien and Labatut, Patrick and Joulin, Armand and Bojanowski, Piotr},
-  journal={arXiv:2304.07193},
-  year={2023}
-}
+```bash
+chmod +x train_local_vits_in100_base.sh
 ```
 
-```
-@misc{darcet2023vitneedreg,
-  title={Vision Transformers Need Registers},
-  author={Darcet, Timothée and Oquab, Maxime and Mairal, Julien and Bojanowski, Piotr},
-  journal={arXiv:2309.16588},
-  year={2023}
-}
+## Step 5: Start Training
+
+### 5.1 Run Training Script
+
+```bash
+./train_local_vits_in100_base.sh
 ```
 
+Or run directly:
+
+```bash
+export PYTHONPATH=/path/to/dinov2:$PYTHONPATH
+torchrun --nproc_per_node=1 \
+    dinov2/run/train/local_train.py \
+    --config-file dinov2/configs/train/vits16.yaml \
+    --output-dir /path/to/output \
+    --save_frequency 10 \
+    --max_to_keep 10 \
+    train.dataset_path=ImageNet:split=TRAIN:root=/path/to/root:extra=/path/to/extra
 ```
-@misc{jose2024dinov2meetstextunified,
-  title={DINOv2 Meets Text: A Unified Framework for Image- and Pixel-Level Vision-Language Alignment}, 
-  author={Cijo Jose and Théo Moutakanni and Dahyun Kang and Federico Baldassarre and Timothée Darcet and Hu Xu and Daniel Li and Marc Szafraniec and Michaël Ramamonjisoa and Maxime Oquab and Oriane Siméoni and Huy V. Vo and Patrick Labatut and Piotr Bojanowski},
-  journal={arXiv:2412.16334},
-  year={2024}
-}
+
+### 5.2 Training Progress
+
+You should see output like:
+
 ```
+Training  [   540/250000]  eta: 6:41:50  lr: 0.0001 (0.0000)  ...
+```
+
+- `[540/250000]`: Current iteration / Total iterations
+- Total iterations = `epochs × OFFICIAL_EPOCH_LENGTH` (e.g., 200 × 1250 = 250,000)
+- `OFFICIAL_EPOCH_LENGTH`: Fixed iteration count per "epoch" for scheduling (default: 1250)
+- Learning rate schedule is based on iterations, not dataset size
+
+### 5.3 Resuming Training
+
+By default, training will automatically attempt to resume from the latest checkpoint in the output directory. The behavior depends on:
+
+1. **If `MODEL.WEIGHTS` is specified** (non-empty path):
+   - Loads from that specific checkpoint path
+
+2. **If `MODEL.WEIGHTS` is empty** (default: `''`) and `resume=True` (default):
+   - Checks for a checkpoint in the `output_dir` directory
+   - If a checkpoint exists, resumes from it
+   - If no checkpoint exists, starts training from scratch (no error)
+
+To resume from a specific checkpoint, specify it in the config file:
+
+**In `dinov2/configs/ssl_default_config.yaml` or your training config file:**
+
+```yaml
+MODEL:
+  WEIGHTS: '/path/to/checkpoint.pth'  # Path to checkpoint file
+```
+
+Or override via command line:
+
+```bash
+torchrun ... MODEL.WEIGHTS=/path/to/checkpoint.pth ...
+```
+
+## Step 6: Understanding Training Configuration
+
+### 6.1 Iteration-Based Training
+
+DINOv2 uses **iteration-based training**, not epoch-based:
+- `OFFICIAL_EPOCH_LENGTH = 1250`: Fixed iterations per "official epoch"
+- Training runs for `epochs × OFFICIAL_EPOCH_LENGTH` iterations
+- This is independent of dataset size or batch size
+- With infinite sampler, dataset wraps around as needed
+
+### 6.2 Batch Size and Dataset Coverage
+
+- **Samples seen per iteration**: `batch_size_per_gpu`
+- **Samples seen per "epoch"**: `1250 × batch_size_per_gpu`
+- **Dataset coverage**: `(1250 × batch_size) / dataset_size`
+
+Example:
+- Dataset: 50,000 images
+- Batch size: 10
+- Samples per "epoch": 1250 × 10 = 12,500
+- Coverage: 12,500 / 50,000 = 25% of dataset per "epoch"
+
+
+## Additional Resources
+
+- Config files: `dinov2/configs/`
+- Training code: `dinov2/train/train.py`
+- Model architectures: `dinov2/models/`
