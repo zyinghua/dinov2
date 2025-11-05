@@ -14,6 +14,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import ShardingStrategy
 from torch.distributed.fsdp import MixedPrecision
 from torch.distributed.fsdp import StateDictType
+from torch.distributed.fsdp import FullStateDictConfig
 from torch.distributed.fsdp.sharded_grad_scaler import ShardedGradScaler
 from torch.distributed.fsdp.wrap import ModuleWrapPolicy
 from torch.distributed.fsdp._runtime_utils import _reshard
@@ -95,7 +96,9 @@ class FSDPCheckpointer(Checkpointer):
             return
 
         data = {}
-        with FSDP.state_dict_type(self.model, StateDictType.LOCAL_STATE_DICT):
+        # Use rank0_only=True for multi-GPU efficiency: only rank 0 gathers full state dict
+        save_policy = FullStateDictConfig(offload_to_cpu=False, rank0_only=True)
+        with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
             data["model"] = self.model.state_dict()
 
         # data["model"] = self.model.state_dict()
@@ -103,16 +106,31 @@ class FSDPCheckpointer(Checkpointer):
             data[key] = obj.state_dict()
         data.update(kwargs)
 
-        basename = f"{name}.{rankstr()}.pth"
-        save_file = os.path.join(self.save_dir, basename)
-        assert os.path.basename(save_file) == basename, basename
-        self.logger.info("Saving checkpoint to {}".format(save_file))
-        with self.path_manager.open(save_file, "wb") as f:
-            torch.save(data, f)
-        self.tag_last_checkpoint(basename)
+        # Only save checkpoint on rank 0 when using multi-GPU (more efficient)
+        # For single GPU, this still works fine
+        if distributed.is_enabled() and distributed.get_global_size() > 1:
+            if distributed.is_main_process():
+                basename = f"{name}.pth"
+                save_file = os.path.join(self.save_dir, basename)
+                assert os.path.basename(save_file) == basename, basename
+                self.logger.info("Saving checkpoint to {}".format(save_file))
+                with self.path_manager.open(save_file, "wb") as f:
+                    torch.save(data, f)
+                self.tag_last_checkpoint(basename)
+        else:
+            # Single GPU: save as before
+            basename = f"{name}.{rankstr()}.pth"
+            save_file = os.path.join(self.save_dir, basename)
+            assert os.path.basename(save_file) == basename, basename
+            self.logger.info("Saving checkpoint to {}".format(save_file))
+            with self.path_manager.open(save_file, "wb") as f:
+                torch.save(data, f)
+            self.tag_last_checkpoint(basename)
 
     def load(self, *args, **kwargs):
-        with FSDP.state_dict_type(self.model, StateDictType.LOCAL_STATE_DICT):
+        # Use rank0_only=False for loading: all ranks need to load the full state dict
+        load_policy = FullStateDictConfig(offload_to_cpu=False, rank0_only=False)
+        with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, load_policy):
             return super().load(*args, **kwargs)
 
     def has_checkpoint(self) -> bool:
@@ -120,7 +138,11 @@ class FSDPCheckpointer(Checkpointer):
         Returns:
             bool: whether a checkpoint exists in the target directory.
         """
-        save_file = os.path.join(self.save_dir, f"last_checkpoint.{rankstr()}")
+        # For multi-GPU, checkpoints are saved on rank 0 only
+        if distributed.is_enabled() and distributed.get_global_size() > 1:
+            save_file = os.path.join(self.save_dir, "last_checkpoint")
+        else:
+            save_file = os.path.join(self.save_dir, f"last_checkpoint.{rankstr()}")
         return self.path_manager.exists(save_file)
 
     def get_checkpoint_file(self) -> str:
@@ -128,7 +150,11 @@ class FSDPCheckpointer(Checkpointer):
         Returns:
             str: The latest checkpoint file in target directory.
         """
-        save_file = os.path.join(self.save_dir, f"last_checkpoint.{rankstr()}")
+        # For multi-GPU, checkpoints are saved on rank 0 only
+        if distributed.is_enabled() and distributed.get_global_size() > 1:
+            save_file = os.path.join(self.save_dir, "last_checkpoint")
+        else:
+            save_file = os.path.join(self.save_dir, f"last_checkpoint.{rankstr()}")
         try:
             with self.path_manager.open(save_file, "r") as f:
                 last_saved = f.read().strip()
@@ -149,9 +175,16 @@ class FSDPCheckpointer(Checkpointer):
         """
         if distributed.is_enabled():
             torch.distributed.barrier()
-        save_file = os.path.join(self.save_dir, f"last_checkpoint.{rankstr()}")
-        with self.path_manager.open(save_file, "w") as f:
-            f.write(last_filename_basename)  # pyre-ignore
+        # For multi-GPU, only rank 0 tags the checkpoint
+        if distributed.is_enabled() and distributed.get_global_size() > 1:
+            if distributed.is_main_process():
+                save_file = os.path.join(self.save_dir, "last_checkpoint")
+                with self.path_manager.open(save_file, "w") as f:
+                    f.write(last_filename_basename)  # pyre-ignore
+        else:
+            save_file = os.path.join(self.save_dir, f"last_checkpoint.{rankstr()}")
+            with self.path_manager.open(save_file, "w") as f:
+                f.write(last_filename_basename)  # pyre-ignore
 
 
 ShardedGradScaler = ShardedGradScaler
