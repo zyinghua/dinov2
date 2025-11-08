@@ -16,7 +16,7 @@
 module load cuda cudnn
 
 # Activate virtual environment
-conda activate dinov2_py310
+conda activate $DINO_ENV
 
 # run the download_model.py script
 python download_model.py

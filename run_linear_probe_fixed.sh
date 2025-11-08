@@ -9,16 +9,14 @@
 #SBATCH -t 02:00:00
 #SBATCH -o linear_probe.out
 #SBATCH -e linear_probe.err
-#SBATCH --mail-type=END,FAIL
-#SBATCH --mail-user=manav_chakravarthy@brown.edu
 
 set -euo pipefail
 trap 'echo "ERROR at line $LINENO"; exit 1' ERR
 
 # Files
-REPO_ROOT="/users/mchakra3/data/mchakra3/dinov2"
-ROOT="/users/mchakra3/scratch/dinov2_data/imagenet100/mini-imagenet"
-PRETRAINED="/users/mchakra3/scratch/dinov2_data/pretrained/base_dinov2_vits_in100_200ep_extracted.pth"
+REPO_ROOT="$HOME/CS2952X/dinov2" # Change this variable based on location of repo
+ROOT="$HOME/scratch/dinov2_data/imagenet100/mini-imagenet"
+PRETRAINED="$HOME/scratch/dinov2_data/pretrained/base_dinov2_vits_in100_200ep_extracted.pth"
 CONFIG="$REPO_ROOT/dinov2/configs/eval/vits16_pretrain.yaml"
 OUTPUT="$ROOT/linear16_50ep_128bs"
 
