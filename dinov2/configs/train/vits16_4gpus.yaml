@@ -1,0 +1,11 @@
+train:
+  batch_size_per_gpu: 10
+student:
+  arch: vit_small
+  patch_size: 16
+  drop_path_rate: 0
+optim:
+  epochs: 200
+evaluation:
+  eval_period_iterations: 6250
+
