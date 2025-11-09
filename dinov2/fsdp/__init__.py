@@ -98,8 +98,15 @@ class FSDPCheckpointer(Checkpointer):
         data = {}
         # Use rank0_only=True for multi-GPU efficiency: only rank 0 gathers full state dict
         save_policy = FullStateDictConfig(offload_to_cpu=False, rank0_only=True)
+        import torch.distributed as dist
+        # Gather state dict - with rank0_only=True, only rank 0 gets full dict, but all processes participate
         with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
             data["model"] = self.model.state_dict()
+        # Synchronize all processes after FSDP context exits
+        # This ensures all processes wait for state dict gathering to complete
+        if distributed.is_enabled() and distributed.get_global_size() > 1:
+            if dist.is_initialized():
+                dist.barrier()
 
         # data["model"] = self.model.state_dict()
         for key, obj in self.checkpointables.items():
@@ -117,6 +124,10 @@ class FSDPCheckpointer(Checkpointer):
                 with self.path_manager.open(save_file, "wb") as f:
                     torch.save(data, f)
                 self.tag_last_checkpoint(basename)
+            # Synchronize all processes after checkpoint save and tagging
+            # This ensures all processes wait for rank 0 to finish writing
+            if dist.is_initialized():
+                dist.barrier()
         else:
             # Single GPU: save as before
             basename = f"{name}.{rankstr()}.pth"
@@ -129,9 +140,15 @@ class FSDPCheckpointer(Checkpointer):
 
     def load(self, *args, **kwargs):
         # Use rank0_only=False for loading: all ranks need to load the full state dict
+        import torch.distributed as dist
         load_policy = FullStateDictConfig(offload_to_cpu=False, rank0_only=False)
         with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, load_policy):
-            return super().load(*args, **kwargs)
+            result = super().load(*args, **kwargs)
+        # Synchronize all processes after checkpoint load
+        if distributed.is_enabled() and distributed.get_global_size() > 1:
+            if dist.is_initialized():
+                dist.barrier()
+        return result
 
     def has_checkpoint(self) -> bool:
         """
@@ -173,8 +190,6 @@ class FSDPCheckpointer(Checkpointer):
         Args:
             last_filename_basename (str): the basename of the last filename.
         """
-        if distributed.is_enabled():
-            torch.distributed.barrier()
         # For multi-GPU, only rank 0 tags the checkpoint
         if distributed.is_enabled() and distributed.get_global_size() > 1:
             if distributed.is_main_process():
