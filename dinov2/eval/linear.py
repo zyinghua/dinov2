@@ -142,7 +142,8 @@ def get_args_parser(
         epoch_length=1250,
         save_checkpoint_frequency=20,
         eval_period_iterations=1250,
-        learning_rates=[1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1],
+#        learning_rates=[1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1],
+        learning_rates=[1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3],
         val_metric_type=MetricType.MEAN_ACCURACY,
         test_metric_types=None,
         classifier_fpath=None,
@@ -230,7 +231,6 @@ class LinearPostprocessor(nn.Module):
 
 def scale_lr(learning_rates, batch_size):
     return learning_rates * (batch_size * distributed.get_global_size()) / 256.0
-
 
 def setup_linear_classifiers(sample_output, n_last_blocks_list, learning_rates, batch_size, num_classes=1000):
     linear_classifiers_dict = nn.ModuleDict()
@@ -514,9 +514,14 @@ def run_eval_linear(
         training_num_classes,
     )
 
-    optimizer = torch.optim.SGD(optim_param_groups, momentum=0.9, weight_decay=0)
+#    optimizer = torch.optim.SGD(optim_param_groups, momentum=0.9, weight_decay=0)
+#    max_iter = epochs * epoch_length
+#    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, max_iter, eta_min=0)
+
+    optimizer = torch.optim.Adam(optim_param_groups, weight_decay=0)
     max_iter = epochs * epoch_length
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, max_iter, eta_min=0)
+
     checkpointer = Checkpointer(linear_classifiers, output_dir, optimizer=optimizer, scheduler=scheduler)
     start_iter = checkpointer.resume_or_load(classifier_fpath or "", resume=resume).get("iteration", -1) + 1
     train_data_loader = make_data_loader(
