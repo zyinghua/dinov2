@@ -109,20 +109,8 @@ class FSDPCheckpointer(Checkpointer):
                 dist.barrier()
 
         # data["model"] = self.model.state_dict()
-        # For checkpointables (like optimizer), only save on rank 0 in multi-GPU
-        # This ensures consistency - all ranks will load the same optimizer state
-        if distributed.is_enabled() and distributed.get_global_size() > 1:
-            if distributed.is_main_process():
-                for key, obj in self.checkpointables.items():
-                    data[key] = obj.state_dict()
-            else:
-                # Non-rank-0 processes: don't save checkpointables
-                # They'll be loaded from rank 0's saved state
-                pass
-        else:
-            # Single GPU: save all checkpointables
-            for key, obj in self.checkpointables.items():
-                data[key] = obj.state_dict()
+        for key, obj in self.checkpointables.items():
+            data[key] = obj.state_dict()
         data.update(kwargs)
 
         # Only save checkpoint on rank 0 when using multi-GPU (more efficient)
@@ -154,81 +142,13 @@ class FSDPCheckpointer(Checkpointer):
         # Use rank0_only=False for loading: all ranks need to load the full state dict
         import torch.distributed as dist
         load_policy = FullStateDictConfig(offload_to_cpu=False, rank0_only=False)
-        
-        # Get checkpointables to load separately if needed
-        checkpointables_to_load = kwargs.get("checkpointables", None)
-        
-        # Temporarily remove checkpointables from kwargs to load model first
-        # We'll load optimizer state separately with error handling
-        original_checkpointables = kwargs.pop("checkpointables", None)
-        kwargs["checkpointables"] = []  # Don't load checkpointables yet
-        
-        # Handle case where checkpoint file doesn't exist (e.g., deleted by max_to_keep cleanup)
-        try:
-            with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, load_policy):
-                result = super().load(*args, **kwargs)
-        except (FileNotFoundError, IOError, OSError) as e:
-            error_msg = str(e)
-            # Check if error is about missing checkpoint file
-            if "No such file or directory" in error_msg or "not found" in error_msg.lower():
-                self.logger.warning(
-                    f"Checkpoint file not found (may have been deleted by max_to_keep cleanup): {e}. "
-                    f"Starting/resuming from available checkpoint or beginning training."
-                )
-                # Return empty dict to indicate no checkpoint was loaded
-                # This allows training to continue from the latest available checkpoint or start fresh
-                return {}
-            else:
-                # Re-raise if it's a different IO error
-                raise
-        
-        # Get checkpoint dict (contains optimizer state if it exists)
-        checkpoint = result if isinstance(result, dict) else {}
-        
-        # Restore original checkpointables list
-        if original_checkpointables is not None:
-            checkpointables_to_load = original_checkpointables
-        else:
-            checkpointables_to_load = list(self.checkpointables.keys())
-        
-        for key in checkpointables_to_load:
-            if key in checkpoint:
-
-                state_dict = checkpoint.pop(key)
-                try:
-                    obj = self.checkpointables[key]
-                    # Load optimizer state - this should work if parameter structure matches
-                    obj.load_state_dict(state_dict)
-                    self.logger.info(f"Loaded {key} state successfully")
-                except (RuntimeError, ValueError, KeyError) as e:
-
-                    error_msg = str(e)
-                    if "size" in error_msg.lower() or "shape" in error_msg.lower() or "must match" in error_msg.lower():
-                        self.logger.warning(
-                            f"Failed to load {key} state due to shape/size mismatch. "
-                            f"This may indicate model structure or FSDP configuration changed. "
-                            f"Reinitializing {key} state. "
-                            f"Error: {e}"
-                        )
-                        # Reinitialize optimizer state to avoid corrupted state
-                        if key == "optimizer":
-                            # Clear optimizer state while preserving param_groups structure
-                            for param_group in obj.param_groups:
-                                for param in param_group['params']:
-                                    if param in obj.state:
-                                        del obj.state[param]
-                            self.logger.info(f"Reinitialized {key} state")
-                    else:
-                        self.logger.warning(f"Failed to load {key} state: {e}. Continuing without it.")
-                except Exception as e:
-                    # Catch any other unexpected errors
-                    self.logger.warning(f"Failed to load {key} state: {e}. Continuing without it.")
-        
+        with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, load_policy):
+            result = super().load(*args, **kwargs)
         # Synchronize all processes after checkpoint load
         if distributed.is_enabled() and distributed.get_global_size() > 1:
             if dist.is_initialized():
                 dist.barrier()
-        return checkpoint
+        return result
 
     def has_checkpoint(self) -> bool:
         """
@@ -240,14 +160,7 @@ class FSDPCheckpointer(Checkpointer):
             save_file = os.path.join(self.save_dir, "last_checkpoint")
         else:
             save_file = os.path.join(self.save_dir, f"last_checkpoint.{rankstr()}")
-        # Check if last_checkpoint file exists
-        if not self.path_manager.exists(save_file):
-            return False
-        # Also verify the actual checkpoint file exists (not just the tag file)
-        # This prevents issues when checkpoint was deleted by max_to_keep cleanup
-        # Use get_checkpoint_file() which already verifies the file exists
-        checkpoint_file = self.get_checkpoint_file()
-        return checkpoint_file != ""
+        return self.path_manager.exists(save_file)
 
     def get_checkpoint_file(self) -> str:
         """
@@ -268,13 +181,7 @@ class FSDPCheckpointer(Checkpointer):
             return ""
         # pyre-fixme[6]: For 2nd param expected `Union[PathLike[str], str]` but got
         #  `Union[bytes, str]`.
-        checkpoint_path = os.path.join(self.save_dir, last_saved)
-        # Verify the checkpoint file actually exists before returning the path
-        # This prevents race conditions where the file was deleted between reading
-        # last_checkpoint and using the path
-        if not self.path_manager.exists(checkpoint_path):
-            return ""
-        return checkpoint_path
+        return os.path.join(self.save_dir, last_saved)
 
     def tag_last_checkpoint(self, last_filename_basename: str) -> None:
         """
