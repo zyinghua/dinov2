@@ -17,6 +17,13 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
 
     collated_local_crops = torch.stack([s[0]["local_crops"][i] for i in range(n_local_crops) for s in samples_list])
 
+    # Collate raw full images for alignment (if available)
+    # These will be preprocessed using REPA's exact order in training
+    if "full_image_raw" in samples_list[0][0]:
+        collated_full_images_raw = torch.stack([s[0]["full_image_raw"] for s in samples_list])
+    else:
+        collated_full_images_raw = None
+
     B = len(collated_global_crops)
     N = n_tokens
     n_samples_masked = int(B * mask_probability)
@@ -38,7 +45,7 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
 
     masks_weight = (1 / collated_masks.sum(-1).clamp(min=1.0)).unsqueeze(-1).expand_as(collated_masks)[collated_masks]
 
-    return {
+    result = {
         "collated_global_crops": collated_global_crops.to(dtype),
         "collated_local_crops": collated_local_crops.to(dtype),
         "collated_masks": collated_masks,
@@ -47,3 +54,9 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
         "upperbound": upperbound,
         "n_masked_patches": torch.full((1,), fill_value=mask_indices_list.shape[0], dtype=torch.long),
     }
+    
+    # Add raw full images for alignment if available (will be preprocessed in training)
+    if collated_full_images_raw is not None:
+        result["collated_full_images_raw"] = collated_full_images_raw  # Keep as float32 for preprocessing
+    
+    return result

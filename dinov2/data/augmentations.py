@@ -115,4 +115,11 @@ class DataAugmentationDINO(object):
         output["local_crops"] = local_crops
         output["offsets"] = ()
 
+        # Full image for alignment - store raw tensor (after ToTensor, before normalize/resize)
+        # This allows us to apply REPA's exact preprocessing order in training: normalize -> resize
+        from torchvision.transforms import ToTensor
+        to_tensor = ToTensor()
+        raw_image_tensor = to_tensor(image)  # Convert PIL to tensor in [0, 1] range
+        output["full_image_raw"] = raw_image_tensor  # Store raw for REPA preprocessing
+
         return output

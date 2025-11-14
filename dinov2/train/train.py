@@ -309,6 +309,7 @@ def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5):
 
 def main(args):
     cfg = setup(args)
+    print(f"cfg show: {cfg}")
 
     model = SSLMetaArch(cfg).to(torch.device("cuda"))
     model.prepare_for_distributed_training()

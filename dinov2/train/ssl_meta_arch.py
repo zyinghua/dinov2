@@ -18,6 +18,16 @@ from dinov2.fsdp import get_fsdp_wrapper, ShardedGradScaler, get_fsdp_modules, r
 
 from dinov2.models.vision_transformer import BlockChunk
 
+# Alignment imports
+try:
+    from dinov2.alignment_model import DINOv2WithAlignment
+    from dinov2.alignment_loss import AlignmentLoss
+    from dinov2.extract_dit_features import DiTFeatureExtractor
+    from dinov2.alignment_utils import preprocess_for_alignment
+    ALIGNMENT_AVAILABLE = True
+except ImportError:
+    ALIGNMENT_AVAILABLE = False
+
 
 try:
     from xformers.ops import fmha
@@ -46,6 +56,49 @@ class SSLMetaArch(nn.Module):
             chkpt = torch.load(cfg.student.pretrained_weights)
             logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights}")
             student_backbone.load_state_dict(chkpt["model"], strict=False)
+        
+        # Alignment setup
+        self.do_alignment = False
+        self.dit_extractor = None
+        self.alignment_loss_fn = None
+        self.alignment_loss_weight = 0.0
+        
+        if ALIGNMENT_AVAILABLE:
+            alignment_cfg = getattr(cfg, 'alignment', None)
+            if alignment_cfg is not None and getattr(alignment_cfg, 'enabled', False):
+                self.do_alignment = True
+                logger.info("OPTIONS -- ALIGNMENT -- enabled")
+                logger.info(f"OPTIONS -- ALIGNMENT -- depth: {alignment_cfg.alignment_depth}")
+                logger.info(f"OPTIONS -- ALIGNMENT -- loss_weight: {alignment_cfg.alignment_loss_weight}")
+                logger.info(f"OPTIONS -- ALIGNMENT -- dit_timestep: {alignment_cfg.dit_timestep}")
+                
+                # Wrap student backbone with alignment support
+                student_backbone = DINOv2WithAlignment(
+                    base_model=student_backbone,
+                    alignment_depth=alignment_cfg.alignment_depth,
+                    dit_hidden_dim=alignment_cfg.dit_hidden_dim,
+                    projector_dim=alignment_cfg.projector_dim,
+                )
+                # Update the model dict with the wrapped backbone
+                student_model_dict["backbone"] = student_backbone
+                
+                # Initialize DiT feature extractor
+                self.dit_extractor = DiTFeatureExtractor(
+                    dit_model_path=alignment_cfg.dit_model_path,
+                    dit_model_name=alignment_cfg.dit_model_name,
+                    image_size=cfg.crops.global_crops_size,
+                    dit_extraction_layer=alignment_cfg.dit_extraction_layer,
+                    dit_timestep=alignment_cfg.dit_timestep,
+                    device="cuda",
+                )
+                
+                # Initialize alignment loss
+                self.alignment_loss_fn = AlignmentLoss(
+                    loss_type=alignment_cfg.alignment_loss_type
+                )
+                self.alignment_loss_weight = alignment_cfg.alignment_loss_weight
+            else:
+                logger.info("OPTIONS -- ALIGNMENT -- disabled")
 
         self.embed_dim = embed_dim
         self.dino_out_dim = cfg.dino.head_n_prototypes
@@ -232,6 +285,27 @@ class SSLMetaArch(nn.Module):
         loss_dict = {}
 
         loss_accumulator = 0  # for backprop
+        
+        # Extract alignment features if enabled (using full resized image, not crops)
+        alignment_features = None
+        if self.do_alignment and hasattr(self.student.backbone, 'alignment_depth') and self.student.backbone.alignment_depth != -1:
+            if "collated_full_images_raw" in images:
+                full_images_raw = images["collated_full_images_raw"].cuda(non_blocking=True)
+                # Get patch_size from the base model to compute correct target resolution
+                patch_size = self.student.backbone.base_model.patch_size
+                full_images = preprocess_for_alignment(full_images_raw, patch_size=patch_size, device=full_images_raw.device)
+                # Separate forward pass for alignment: extract alignment features from full images
+                student_alignment_output = self.student.backbone.forward_features(
+                    full_images,
+                    masks=None,
+                    return_alignment_features=True
+                )
+                if isinstance(student_alignment_output, tuple):
+                    _, alignment_features = student_alignment_output
+                else:
+                    alignment_features = None
+        
+        # Standard forward pass for all crops (for DINO/IBOT losses)
         student_global_backbone_output_dict, student_local_backbone_output_dict = self.student.backbone(
             [global_crops, local_crops], masks=[masks, None], is_training=True
         )
@@ -338,6 +412,31 @@ class SSLMetaArch(nn.Module):
 
             # accumulate loss
             loss_accumulator += self.ibot_loss_weight * ibot_patch_loss
+
+        # Alignment loss: DiT features as "teacher", student alignment features as "student"
+        if self.do_alignment and alignment_features is not None:
+            # Extract DiT features from full original image (same as DINOv2 alignment)
+            # DiT is the "teacher" so we don't want gradients flowing to it
+            if "collated_full_images_raw" in images:
+                full_images_raw = images["collated_full_images_raw"].cuda(non_blocking=True)
+                # Convert from [0, 1] range to [-1, 1] range for DiT VAE
+                # full_images_raw is in [0, 1] range (from ToTensor)
+                full_images_for_dit = full_images_raw * 2.0 - 1.0
+                
+                # Extract DiT features without gradients (DiT is the teacher)
+                with torch.no_grad():
+                    dit_features = self.dit_extractor.extract_features(full_images_for_dit)
+                
+                # Compute alignment loss: student alignment features vs DiT features
+                # This should have gradients for student features, but not for DiT features
+                alignment_loss = self.alignment_loss_fn(
+                    dinov2_features=alignment_features,
+                    dit_features=dit_features
+                )
+                
+                # Add weighted alignment loss
+                loss_accumulator += alignment_loss * self.alignment_loss_weight
+                loss_dict["alignment_loss"] = alignment_loss
 
         self.backprop_loss(loss_accumulator)
 
