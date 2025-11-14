@@ -1,0 +1,21 @@
+submitit ERROR (2025-11-13 20:04:14,951) - Submitted job triggered an exception
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/users/hnam16/miniconda3/envs/py312/lib/python3.12/site-packages/submitit/core/_submit.py", line 11, in <module>
+    submitit_main()
+  File "/users/hnam16/miniconda3/envs/py312/lib/python3.12/site-packages/submitit/core/submission.py", line 76, in submitit_main
+    process_job(args.folder)
+  File "/users/hnam16/miniconda3/envs/py312/lib/python3.12/site-packages/submitit/core/submission.py", line 69, in process_job
+    raise error
+  File "/users/hnam16/miniconda3/envs/py312/lib/python3.12/site-packages/submitit/core/submission.py", line 52, in process_job
+    delayed = utils.DelayedSubmission.load(paths.submitted_pickle)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/users/hnam16/miniconda3/envs/py312/lib/python3.12/site-packages/submitit/core/utils.py", line 153, in load
+    obj = pickle_load(filepath)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/users/hnam16/miniconda3/envs/py312/lib/python3.12/site-packages/submitit/core/utils.py", line 232, in pickle_load
+    return pickle.load(ifile)
+           ^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'ditmodel'
+srun: error: gpu2008: task 0: Exited with exit code 1
