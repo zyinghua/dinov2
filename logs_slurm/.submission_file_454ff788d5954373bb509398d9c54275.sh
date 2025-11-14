@@ -1,1 +1,0 @@
-/oscar/home/hnam16/hazel/code/dit_linprobe/logs_slurm/14112530_submission.sh
