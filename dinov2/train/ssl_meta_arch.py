@@ -19,14 +19,10 @@ from dinov2.fsdp import get_fsdp_wrapper, ShardedGradScaler, get_fsdp_modules, r
 from dinov2.models.vision_transformer import BlockChunk
 
 # Alignment imports
-try:
-    from dinov2.alignment_model import DINOv2WithAlignment
-    from dinov2.alignment_loss import AlignmentLoss
-    from dinov2.extract_dit_features import DiTFeatureExtractor
-    from dinov2.alignment_utils import preprocess_for_alignment
-    ALIGNMENT_AVAILABLE = True
-except ImportError:
-    ALIGNMENT_AVAILABLE = False
+from dinov2.alignment_model import DINOv2WithAlignment
+from dinov2.alignment_loss import AlignmentLoss
+from dinov2.extract_dit_features import DiTFeatureExtractor
+from dinov2.alignment_utils import preprocess_for_alignment
 
 
 try:
@@ -59,46 +55,53 @@ class SSLMetaArch(nn.Module):
         
         # Alignment setup
         self.do_alignment = False
+        self.alignment_wrapper = None  # Only used for alignment feature extraction
         self.dit_extractor = None
         self.alignment_loss_fn = None
         self.alignment_loss_weight = 0.0
         
-        if ALIGNMENT_AVAILABLE:
-            alignment_cfg = getattr(cfg, 'alignment', None)
-            if alignment_cfg is not None and getattr(alignment_cfg, 'enabled', False):
-                self.do_alignment = True
-                logger.info("OPTIONS -- ALIGNMENT -- enabled")
-                logger.info(f"OPTIONS -- ALIGNMENT -- depth: {alignment_cfg.alignment_depth}")
-                logger.info(f"OPTIONS -- ALIGNMENT -- loss_weight: {alignment_cfg.alignment_loss_weight}")
-                logger.info(f"OPTIONS -- ALIGNMENT -- dit_timestep: {alignment_cfg.dit_timestep}")
-                
-                # Wrap student backbone with alignment support
-                student_backbone = DINOv2WithAlignment(
-                    base_model=student_backbone,
-                    alignment_depth=alignment_cfg.alignment_depth,
-                    dit_hidden_dim=alignment_cfg.dit_hidden_dim,
-                    projector_dim=alignment_cfg.projector_dim,
-                )
-                # Update the model dict with the wrapped backbone
-                student_model_dict["backbone"] = student_backbone
-                
-                # Initialize DiT feature extractor
-                self.dit_extractor = DiTFeatureExtractor(
-                    dit_model_path=alignment_cfg.dit_model_path,
-                    dit_model_name=alignment_cfg.dit_model_name,
-                    image_size=cfg.crops.global_crops_size,
-                    dit_extraction_layer=alignment_cfg.dit_extraction_layer,
-                    dit_timestep=alignment_cfg.dit_timestep,
-                    device="cuda",
-                )
-                
-                # Initialize alignment loss
-                self.alignment_loss_fn = AlignmentLoss(
-                    loss_type=alignment_cfg.alignment_loss_type
-                )
-                self.alignment_loss_weight = alignment_cfg.alignment_loss_weight
-            else:
-                logger.info("OPTIONS -- ALIGNMENT -- disabled")
+        alignment_cfg = getattr(cfg, 'alignment', None)
+        if alignment_cfg is not None and getattr(alignment_cfg, 'enabled', False):
+            self.do_alignment = True
+            logger.info("OPTIONS -- ALIGNMENT -- enabled")
+            logger.info(f"OPTIONS -- ALIGNMENT -- depth: {alignment_cfg.alignment_depth}")
+            logger.info(f"OPTIONS -- ALIGNMENT -- loss_weight: {alignment_cfg.alignment_loss_weight}")
+            logger.info(f"OPTIONS -- ALIGNMENT -- dit_timestep: {alignment_cfg.dit_timestep}")
+            
+            # Create alignment wrapper but DON'T replace student_backbone
+            # Keep student_backbone unwrapped for all standard training operations
+            # Only use wrapper for alignment feature extraction
+            # Register as a module so projector parameters are included in training
+            # NOTE: We pass student_backbone now, but after FSDP wrapping, we'll update it
+            self.alignment_wrapper = DINOv2WithAlignment(
+                base_model=student_backbone,  # Initial reference - will be updated after FSDP wrapping
+                alignment_depth=alignment_cfg.alignment_depth,
+                dit_hidden_dim=alignment_cfg.dit_hidden_dim,
+                projector_dim=alignment_cfg.projector_dim,
+            )
+            # Student backbone remains unwrapped - use base_model directly
+            # student_model_dict["backbone"] stays as student_backbone (unwrapped)
+            # alignment_wrapper is registered as self.alignment_wrapper, so its projector params are trainable
+            
+            # Initialize DiT feature extractor
+            patch_size = cfg.student.patch_size
+            dit_image_size = 16 * patch_size
+            self.dit_extractor = DiTFeatureExtractor(
+                dit_model_path=alignment_cfg.dit_model_path,
+                dit_model_name=alignment_cfg.dit_model_name,
+                image_size=dit_image_size,
+                dit_extraction_layer=alignment_cfg.dit_extraction_layer,
+                dit_timestep=alignment_cfg.dit_timestep,
+                device="cuda",
+            )
+            
+            # Initialize alignment loss
+            self.alignment_loss_fn = AlignmentLoss(
+                loss_type=alignment_cfg.alignment_loss_type
+            )
+            self.alignment_loss_weight = alignment_cfg.alignment_loss_weight
+        else:
+            logger.info("OPTIONS -- ALIGNMENT -- disabled")
 
         self.embed_dim = embed_dim
         self.dino_out_dim = cfg.dino.head_n_prototypes
@@ -288,14 +291,14 @@ class SSLMetaArch(nn.Module):
         
         # Extract alignment features if enabled (using full resized image, not crops)
         alignment_features = None
-        if self.do_alignment and hasattr(self.student.backbone, 'alignment_depth') and self.student.backbone.alignment_depth != -1:
+        if self.do_alignment and self.alignment_wrapper is not None and self.alignment_wrapper.alignment_depth != -1:
             if "collated_full_images_raw" in images:
                 full_images_raw = images["collated_full_images_raw"].cuda(non_blocking=True)
                 # Get patch_size from the base model to compute correct target resolution
-                patch_size = self.student.backbone.base_model.patch_size
+                patch_size = self.student.backbone.patch_size
                 full_images = preprocess_for_alignment(full_images_raw, patch_size=patch_size, device=full_images_raw.device)
-                # Separate forward pass for alignment: extract alignment features from full images
-                student_alignment_output = self.student.backbone.forward_features(
+                # Use alignment_wrapper ONLY for alignment feature extraction
+                student_alignment_output = self.alignment_wrapper.forward_features(
                     full_images,
                     masks=None,
                     return_alignment_features=True
@@ -484,6 +487,8 @@ class SSLMetaArch(nn.Module):
         all_params_groups = []
         for m in self.student.values():
             all_params_groups += self.get_maybe_fused_params_for_submodel(m)
+        if self.alignment_wrapper is not None and self.alignment_wrapper.projector is not None:
+            all_params_groups += self.get_maybe_fused_params_for_submodel(self.alignment_wrapper.projector)
         return all_params_groups
 
     def prepare_for_distributed_training(self):
@@ -497,3 +502,8 @@ class SSLMetaArch(nn.Module):
             self.student[k] = get_fsdp_wrapper(student_model_cfg, modules_to_wrap={BlockChunk})(self.student[k])
             teacher_model_cfg = self.cfg.compute_precision.teacher[k]
             self.teacher[k] = get_fsdp_wrapper(teacher_model_cfg, modules_to_wrap={BlockChunk})(self.teacher[k])
+        
+        # After FSDP wrapping, update alignment_wrapper to use the wrapped student backbone
+        # This ensures alignment_wrapper.base_model always points to the actual trained model
+        if self.alignment_wrapper is not None:
+            self.alignment_wrapper.base_model = self.student["backbone"]
