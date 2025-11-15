@@ -21,4 +21,4 @@ dependencies:
     - --extra-index-url https://pypi.nvidia.com
     - cuml-cu11
     - timm
-    - diffusers
+    - "diffusers<0.30.0"  # Compatible with PyTorch 2.0.0 (newer versions require float8 support)
