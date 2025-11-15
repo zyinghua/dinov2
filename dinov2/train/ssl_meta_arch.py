@@ -68,21 +68,14 @@ class SSLMetaArch(nn.Module):
             logger.info(f"OPTIONS -- ALIGNMENT -- loss_weight: {alignment_cfg.alignment_loss_weight}")
             logger.info(f"OPTIONS -- ALIGNMENT -- dit_timestep: {alignment_cfg.dit_timestep}")
             
-            # Create alignment wrapper but DON'T replace student_backbone
-            # Keep student_backbone unwrapped for all standard training operations
-            # Only use wrapper for alignment feature extraction
-            # Register as a module so projector parameters are included in training
-            # NOTE: We pass student_backbone now, but after FSDP wrapping, we'll update it
+
             self.alignment_wrapper = DINOv2WithAlignment(
-                base_model=student_backbone,  # Initial reference - will be updated after FSDP wrapping
+                base_model=student_backbone,
                 alignment_depth=alignment_cfg.alignment_depth,
                 dit_hidden_dim=alignment_cfg.dit_hidden_dim,
                 projector_dim=alignment_cfg.projector_dim,
             )
-            # Student backbone remains unwrapped - use base_model directly
-            # student_model_dict["backbone"] stays as student_backbone (unwrapped)
-            # alignment_wrapper is registered as self.alignment_wrapper, so its projector params are trainable
-            
+
             # Initialize DiT feature extractor
             patch_size = cfg.student.patch_size
             dit_image_size = 16 * patch_size
