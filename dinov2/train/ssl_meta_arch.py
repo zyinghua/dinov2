@@ -77,8 +77,7 @@ class SSLMetaArch(nn.Module):
             )
 
             # Initialize DiT feature extractor
-            patch_size = cfg.student.patch_size
-            dit_image_size = 16 * patch_size
+            dit_image_size = 16 * cfg.student.patch_size
             self.dit_extractor = DiTFeatureExtractor(
                 dit_model_path=alignment_cfg.dit_model_path,
                 dit_model_name=alignment_cfg.dit_model_name,
@@ -423,8 +422,6 @@ class SSLMetaArch(nn.Module):
                 with torch.no_grad():
                     dit_features = self.dit_extractor.extract_features(full_images_for_dit)
                 
-                # Compute alignment loss: student alignment features vs DiT features
-                # This should have gradients for student features, but not for DiT features
                 alignment_loss = self.alignment_loss_fn(
                     dinov2_features=alignment_features,
                     dit_features=dit_features
