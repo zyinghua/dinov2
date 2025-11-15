@@ -5,7 +5,7 @@ student:
   patch_size: 16
   drop_path_rate: 0
 optim:
-  epochs: 200
+  epochs: 120
 evaluation:
   eval_period_iterations: 6250
 
