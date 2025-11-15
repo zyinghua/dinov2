@@ -66,13 +66,16 @@ class DINOv2WithAlignment(nn.Module):
                 )
             self.actual_extraction_layer = self.alignment_depth
             
-            # Create projector to map DINOv2 features to DiT dimension
-            dinov2_embed_dim = self.base_model.embed_dim
-            self.projector = build_mlp(
-                hidden_size=dinov2_embed_dim,
-                projector_dim=projector_dim,
-                z_dim=dit_hidden_dim
-            )
+            if dit_hidden_dim is not None and projector_dim is not None:
+                dinov2_embed_dim = self.base_model.embed_dim
+                self.projector = build_mlp(
+                    hidden_size=dinov2_embed_dim,
+                    projector_dim=projector_dim,
+                    z_dim=dit_hidden_dim
+                )
+            else:
+                # No projector - return raw features (for sanity check with DINOv2 teacher)
+                self.projector = None
     
     def forward(
         self, 
@@ -132,12 +135,14 @@ class DINOv2WithAlignment(nn.Module):
                 # Extract patch tokens: (B, num_patches, embed_dim)
                 patch_tokens = x[:, 1:]  # Remove cls token
                 
-                # Project to DiT dimension
-                B, N, D = patch_tokens.shape
-                projected = self.projector(patch_tokens.reshape(-1, D))  # (B*N, dit_hidden_dim)
-                projected = projected.reshape(B, N, self.dit_hidden_dim)  # (B, N, dit_hidden_dim)
-                
-                alignment_features = [projected]
+                if self.projector is not None:
+                    B, N, D = patch_tokens.shape
+                    projected = self.projector(patch_tokens.reshape(-1, D))  # (B*N, dit_hidden_dim)
+                    projected = projected.reshape(B, N, self.dit_hidden_dim)  # (B, N, dit_hidden_dim)
+                    alignment_features = [projected]
+                else:
+                    # Return raw features (for sanity check with DINOv2 teacher)
+                    alignment_features = [patch_tokens]
                 break
         
         # Continue forward through remaining blocks if needed
@@ -187,10 +192,15 @@ class DINOv2WithAlignment(nn.Module):
             x_first = blk(x_first)
             if i == self.actual_extraction_layer:
                 patch_tokens = x_first[:, 1:]  # Remove cls token
-                B, N, D = patch_tokens.shape
-                projected = self.projector(patch_tokens.reshape(-1, D))
-                projected = projected.reshape(B, N, self.dit_hidden_dim)
-                alignment_features = [projected]
+                
+                if self.projector is not None:
+                    B, N, D = patch_tokens.shape
+                    projected = self.projector(patch_tokens.reshape(-1, D))
+                    projected = projected.reshape(B, N, self.dit_hidden_dim)
+                    alignment_features = [projected]
+                else:
+                    # Return raw features (for sanity check with DINOv2 teacher)
+                    alignment_features = [patch_tokens]
                 break
         
         # Standard forward for all crops (delegate to base model to ensure exact same behavior)
