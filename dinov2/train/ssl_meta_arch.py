@@ -289,9 +289,10 @@ class SSLMetaArch(nn.Module):
                 # Get patch_size from the base model to compute correct target resolution
                 patch_size = self.student.backbone.patch_size
                 full_images = preprocess_for_alignment(full_images_raw, patch_size=patch_size, device=full_images_raw.device)
-                # Use alignment_wrapper ONLY for alignment feature extraction
+                
                 student_alignment_output = self.alignment_wrapper.forward_features(
-                    full_images,
+                    backbone=self.student["backbone"],
+                    x=full_images,
                     masks=None,
                     return_alignment_features=True
                 )
@@ -492,8 +493,3 @@ class SSLMetaArch(nn.Module):
             self.student[k] = get_fsdp_wrapper(student_model_cfg, modules_to_wrap={BlockChunk})(self.student[k])
             teacher_model_cfg = self.cfg.compute_precision.teacher[k]
             self.teacher[k] = get_fsdp_wrapper(teacher_model_cfg, modules_to_wrap={BlockChunk})(self.teacher[k])
-        
-        # After FSDP wrapping, update alignment_wrapper to use the wrapped student backbone
-        # This ensures alignment_wrapper.base_model always points to the actual trained model
-        if self.alignment_wrapper is not None:
-            self.alignment_wrapper.base_model = self.student["backbone"]

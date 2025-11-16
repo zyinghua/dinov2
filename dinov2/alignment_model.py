@@ -1,16 +1,17 @@
 """
 Wrapper to add alignment support to DINOv2 models.
 """
+import warnings
 import torch
 import torch.nn as nn
-from typing import Optional, List, Tuple
+from typing import Optional
 from dinov2.models.vision_transformer import DinoVisionTransformer
 
 
 def build_mlp(hidden_size, projector_dim, z_dim):
     """
     Build MLP projector (same as REPA).
-    
+
     Args:
         hidden_size: Input dimension (DINOv2 embed_dim)
         projector_dim: Hidden dimension of projector
@@ -32,6 +33,7 @@ class DINOv2WithAlignment(nn.Module):
     """
     Wrapper around DINOv2 model that adds alignment support.
     Extracts features at specified layer and projects them to match DiT dimensions.
+    Uses DINOv2's built-in get_intermediate_layers method for FSDP compatibility.
     """
     def __init__(
         self,
@@ -42,32 +44,22 @@ class DINOv2WithAlignment(nn.Module):
     ):
         """
         Args:
-            base_model: Base DINOv2 model
+            base_model: Base DINOv2 model (only used to get embed_dim for projector initialization)
             alignment_depth: Which DINOv2 layer to extract features from (0-indexed)
                             -1 means no alignment
             dit_hidden_dim: DiT hidden dimension to project to
             projector_dim: Projector MLP hidden dimension
         """
         super().__init__()
-        self.base_model = base_model
         self.alignment_depth = alignment_depth
         self.dit_hidden_dim = dit_hidden_dim
         self.projector_dim = projector_dim
         
-        # Determine actual extraction layer
-        self.num_blocks = len(self.base_model.blocks)
         if self.alignment_depth == -1:
-            self.actual_extraction_layer = None
             self.projector = None
         else:
-            if self.alignment_depth >= self.num_blocks:
-                raise ValueError(
-                    f"alignment_depth {self.alignment_depth} >= num_blocks {self.num_blocks}"
-                )
-            self.actual_extraction_layer = self.alignment_depth
-            
             if dit_hidden_dim is not None and projector_dim is not None:
-                dinov2_embed_dim = self.base_model.embed_dim
+                dinov2_embed_dim = base_model.embed_dim
                 self.projector = build_mlp(
                     hidden_size=dinov2_embed_dim,
                     projector_dim=projector_dim,
@@ -77,133 +69,73 @@ class DINOv2WithAlignment(nn.Module):
                 # No projector - return raw features (for sanity check with DINOv2 teacher)
                 self.projector = None
     
-    def forward(
-        self, 
-        x, 
-        masks=None,
-        is_training=False,
-        return_alignment_features: bool = False
-    ):
-        """
-        Forward pass with optional alignment feature extraction.
-        Supports both single tensor and list inputs (for training with crops).
-        
-        Args:
-            x: Input images of shape (B, 3, H, W) or list of tensors
-            masks: Optional masks or list of masks
-            is_training: Whether in training mode
-            return_alignment_features: Whether to return alignment features
-            
-        Returns:
-            If return_alignment_features=False:
-                - Standard DINOv2 output
-            If return_alignment_features=True:
-                - Standard DINOv2 output
-                - List of projected alignment features (one element if alignment enabled)
-        """
-        # Handle list inputs (for training with multiple crops)
-        if isinstance(x, list):
-            return self.forward_features_list(x, masks, return_alignment_features)
-        
-        # Single tensor input
-        return self.forward_features(x, masks, return_alignment_features)
-    
     def forward_features(
         self, 
+        backbone: DinoVisionTransformer,
         x: torch.Tensor, 
         masks: Optional[torch.Tensor] = None,
         return_alignment_features: bool = False
     ):
         """
         Forward features for single tensor input.
-        When return_alignment_features=False, delegates to base model for exact same behavior.
+        When return_alignment_features=False, delegates to backbone for exact same behavior.
+        
+        Args:
+            backbone: DINOv2 backbone model (passed as parameter to avoid storing/updating)
+            x: Input images
+            masks: Optional masks
+            return_alignment_features: Whether to return alignment features
         """
-        # If not extracting alignment features, delegate to base model to keep original pipeline intact
         if not return_alignment_features or self.alignment_depth == -1:
-            return self.base_model.forward_features(x, masks)
+            raise ValueError("Alignment depth is not set or is -1 when calling alignment")
         
-        # Prepare tokens
-        x = self.base_model.prepare_tokens_with_masks(x, masks)
+        # Use hooks with forward_features (which FSDP handles correctly)
+        # get_intermediate_layers doesn't work with FSDP, but forward_features does
+        extracted_features = {}
         
-        # Forward through blocks until extraction layer
-        alignment_features = None
-        for i, blk in enumerate(self.base_model.blocks):
-            x = blk(x)
-            if i == self.actual_extraction_layer:
-                # Extract features at this layer (patch tokens only, exclude cls token)
-                # x shape: (B, 1 + num_patches, embed_dim)
-                # Extract patch tokens: (B, num_patches, embed_dim)
-                patch_tokens = x[:, 1:]  # Remove cls token
-                
-                if self.projector is not None:
-                    B, N, D = patch_tokens.shape
-                    projected = self.projector(patch_tokens.reshape(-1, D))  # (B*N, dit_hidden_dim)
-                    projected = projected.reshape(B, N, self.dit_hidden_dim)  # (B, N, dit_hidden_dim)
-                    alignment_features = [projected]
-                else:
-                    # Return raw features (for sanity check with DINOv2 teacher)
-                    alignment_features = [patch_tokens]
-                break
+        def hook_fn(module, input, output):
+            extracted_features['features'] = output
         
-        # Continue forward through remaining blocks if needed
-        if self.actual_extraction_layer < self.num_blocks - 1:
-            for i in range(self.actual_extraction_layer + 1, self.num_blocks):
-                x = self.base_model.blocks[i](x)
+        # Register hook on the target block - access blocks directly (FSDP handles it)
+        blocks = backbone.blocks
+        if self.alignment_depth < len(blocks):
+            handle = blocks[self.alignment_depth].register_forward_hook(hook_fn)
+        else:
+            warnings.warn("Alignment depth is greater than the number of blocks")
+            return None, None
         
-        # Apply final norm
-        x_norm = self.base_model.norm(x)
-        
-        # Standard DINOv2 output format
-        output = {
-            "x_norm_clstoken": x_norm[:, 0],
-            "x_norm_regtokens": x_norm[:, 1 : self.base_model.num_register_tokens + 1],
-            "x_norm_patchtokens": x_norm[:, self.base_model.num_register_tokens + 1 :],
-            "x_prenorm": x,
-            "masks": masks,
-        }
-        
-        return output, alignment_features
+        try:
+            # Call backbone the same way as normal training loop (not forward_features directly)
+            # This ensures FSDP state is correct
+            _ = backbone([x], masks=[masks], is_training=True)
+            
+            if 'features' not in extracted_features:
+                warnings.warn("No features extracted from alignment depth")
+                return None, None
+            
+            x_intermediate = extracted_features['features']
 
-
-    
-    def forward_features_list(
-        self, 
-        x_list: List[torch.Tensor], 
-        masks_list: Optional[List[torch.Tensor]] = None,
-        return_alignment_features: bool = False
-    ):
-        """
-        Forward features for list inputs (used in training with multiple crops).
-        For alignment, we only extract from the first element (global crops).
-        When return_alignment_features=False, delegates to base model for exact same behavior.
-        """
-        # If not extracting alignment features, delegate to base model to keep original pipeline intact
-        if not return_alignment_features or self.alignment_depth == -1:
-            return self.base_model.forward_features_list(x_list, masks_list)
+            if isinstance(x_intermediate, list):
+                x_intermediate = x_intermediate[0]
+            # Extract patch tokens (exclude cls token)
+            patch_tokens = x_intermediate[:, 1:]  # (B, num_patches, embed_dim)
+            
+            # raw_std = patch_tokens.std(dim=1).mean().item()
+            # print(f"Raw DINOv2 features std (layer {self.alignment_depth}): {raw_std:.4f}")
+        finally:
+            handle.remove()
         
-        # Extract alignment features from first crop only
-        alignment_features = None
-        x_first = self.base_model.prepare_tokens_with_masks(
-            x_list[0], 
-            masks_list[0] if masks_list else None
-        )
+        # Project to DiT dimension if projector is enabled
+        if self.projector is not None:
+            B, N, D = patch_tokens.shape
+            # Ensure dtype matches projector (FSDP might use mixed precision for backbone)
+            projector_dtype = next(self.projector.parameters()).dtype
+            patch_tokens = patch_tokens.to(dtype=projector_dtype)
+            projected = self.projector(patch_tokens.reshape(-1, D))  # (B*N, dit_hidden_dim)
+            projected = projected.reshape(B, N, self.dit_hidden_dim)  # (B, N, dit_hidden_dim)
+            alignment_features = [projected]
+        else:
+            # Return raw features (for sanity check with DINOv2 teacher)
+            alignment_features = [patch_tokens]
         
-        for i, blk in enumerate(self.base_model.blocks):
-            x_first = blk(x_first)
-            if i == self.actual_extraction_layer:
-                patch_tokens = x_first[:, 1:]  # Remove cls token
-                
-                if self.projector is not None:
-                    B, N, D = patch_tokens.shape
-                    projected = self.projector(patch_tokens.reshape(-1, D))
-                    projected = projected.reshape(B, N, self.dit_hidden_dim)
-                    alignment_features = [projected]
-                else:
-                    # Return raw features (for sanity check with DINOv2 teacher)
-                    alignment_features = [patch_tokens]
-                break
-        
-        # Standard forward for all crops (delegate to base model to ensure exact same behavior)
-        output = self.base_model.forward_features_list(x_list, masks_list)
-        
-        return output, alignment_features
+        return None, alignment_features

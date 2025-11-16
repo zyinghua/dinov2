@@ -1,0 +1,32 @@
+train:
+  batch_size_per_gpu: 5
+student:
+  arch: vit_small
+  patch_size: 16
+  drop_path_rate: 0
+optim:
+  epochs: 120
+evaluation:
+  eval_period_iterations: 6250
+
+# Alignment configuration for DINOv2-DiT alignment
+alignment:
+  enabled: true  # Set to false to disable alignment
+  
+  # DINOv2 alignment settings
+  alignment_depth: 4  # Which DINOv2 layer to extract features from (0-indexed, -1 = no alignment)
+  alignment_loss_weight: 0.5  # Weight for alignment loss in total loss
+  
+  # DiT model settings
+  dit_model_path: "/root/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt"  # Path to pretrained DiT checkpoint
+  dit_model_name: "DiT-XL/2"  # DiT architecture name (e.g., "DiT-XL/2", "DiT-L/2", "DiT-B/2")
+  dit_extraction_layer: -1  # Which DiT layer to extract features from (-1 = last layer, 0-indexed)
+  dit_timestep: 1.0  # Timestep for DiT forward pass (1.0 = most clean version)
+  
+  # Projector settings
+  dit_hidden_dim: 1152  # DiT hidden dimension (1152 for XL, 1024 for L, 768 for B)
+  projector_dim: 2048  # MLP projector hidden dimension (same as REPA)
+  
+  # Loss function settings
+  alignment_loss_type: "cosine_sim"  # Loss type: "cosine_sim", "mse", or "l1"
+
