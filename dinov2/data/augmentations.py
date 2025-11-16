@@ -9,6 +9,7 @@ from torchvision import transforms
 
 from .transforms import (
     GaussianBlur,
+    GaussianNoise,
     make_normalize_transform,
 )
 
@@ -24,12 +25,14 @@ class DataAugmentationDINO(object):
         local_crops_number,
         global_crops_size=224,
         local_crops_size=96,
+        noise_std=0.0,
     ):
         self.global_crops_scale = global_crops_scale
         self.local_crops_scale = local_crops_scale
         self.local_crops_number = local_crops_number
         self.global_crops_size = global_crops_size
         self.local_crops_size = local_crops_size
+        self.noise_std = noise_std
 
         logger.info("###################################")
         logger.info("Using data augmentation parameters:")
@@ -38,6 +41,7 @@ class DataAugmentationDINO(object):
         logger.info(f"local_crops_number: {local_crops_number}")
         logger.info(f"global_crops_size: {global_crops_size}")
         logger.info(f"local_crops_size: {local_crops_size}")
+        logger.info(f"noise_std: {noise_std}")
         logger.info("###################################")
 
         # random resized crop and flip
@@ -82,12 +86,11 @@ class DataAugmentationDINO(object):
         local_transfo_extra = GaussianBlur(p=0.5)
 
         # normalization
-        self.normalize = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                make_normalize_transform(),
-            ]
-        )
+        normalize_transforms = [transforms.ToTensor()]
+        if noise_std > 0.0:
+            normalize_transforms.append(GaussianNoise(std=noise_std))
+        normalize_transforms.append(make_normalize_transform())
+        self.normalize = transforms.Compose(normalize_transforms)
 
         self.global_transfo1 = transforms.Compose([color_jittering, global_transfo1_extra, self.normalize])
         self.global_transfo2 = transforms.Compose([color_jittering, global_transfo2_extra, self.normalize])
