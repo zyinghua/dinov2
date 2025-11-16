@@ -10,7 +10,8 @@ dist/
 
 .vscode/
 DiT/pretrained_models/
-data/
+/data/
+!dinov2/data/
 
 *.out
 *.err
