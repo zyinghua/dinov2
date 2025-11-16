@@ -14,4 +14,5 @@ torchrun --nproc_per_node=1 \
     --pretrained-weights $OUTPUT/eval/training_$STEP/teacher_checkpoint.pth \
     --output-dir $OUTPUT/eval/training_$STEP/linear \
 	--train-dataset ImageNet:split=TRAIN:root=/root/autodl-tmp/mini-imagenet:extra=/root/autodl-tmp/mini-imagenet \
-    --val-dataset ImageNet:split=VAL:root=/root/autodl-tmp/mini-imagenet:extra=/root/autodl-tmp/mini-imagenet
+    --val-dataset ImageNet:split=VAL:root=/root/autodl-tmp/mini-imagenet:extra=/root/autodl-tmp/mini-imagenet \
+    --noise-std 0.2
