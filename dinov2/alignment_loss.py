@@ -100,6 +100,8 @@ class AlignmentLoss:
     ) -> torch.Tensor:
         """
         Mean squared error loss.
+        Note: MSE is scale-sensitive, so we normalize features before computing loss
+        to avoid being dominated by magnitude differences.
         
         Args:
             dinov2_features: List of DINOv2 feature tensors
@@ -109,39 +111,7 @@ class AlignmentLoss:
             Scalar loss value
         """
         mse_loss = 0.0
-        
-        for dinov2_feat in dinov2_features:
-            # Ensure same dimensions (might need projection if dims don't match)
-            if dinov2_feat.shape[-1] != dit_features.shape[-1]:
-                # If dimensions don't match, we can't directly compute MSE
-                # This would require a projection layer, which should be handled in the model
-                raise ValueError(
-                    f"Feature dimension mismatch: DINOv2 {dinov2_feat.shape[-1]} vs DiT {dit_features.shape[-1]}. "
-                    "Use projector in model to match dimensions."
-                )
-            
-            mse = F.mse_loss(dinov2_feat, dit_features, reduction='mean')
-            mse_loss += mse
-        
-        mse_loss = mse_loss / len(dinov2_features)
-        return mse_loss
-    
-    def _l1_loss(
-        self,
-        dinov2_features: List[torch.Tensor],
-        dit_features: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        L1 loss.
-        
-        Args:
-            dinov2_features: List of DINOv2 feature tensors
-            dit_features: DiT feature tensor
-            
-        Returns:
-            Scalar loss value
-        """
-        l1_loss = 0.0
+        bsz = dinov2_features[0].shape[0]
         
         for dinov2_feat in dinov2_features:
             # Ensure same dimensions
@@ -151,9 +121,63 @@ class AlignmentLoss:
                     "Use projector in model to match dimensions."
                 )
             
-            l1 = F.l1_loss(dinov2_feat, dit_features, reduction='mean')
-            l1_loss += l1
+            # Normalize both features before MSE (MSE is scale-sensitive)
+            # This matches the pattern of normalizing in loss function
+            for j in range(bsz):
+                dinov2_feat_j = dinov2_feat[j]  # (N, D)
+                dit_feat_j = dit_features[j]  # (N, D)
+                
+                # Normalize both features
+                dinov2_feat_j_norm = F.normalize(dinov2_feat_j, dim=-1)  # (N, D)
+                dit_feat_j_norm = F.normalize(dit_feat_j, dim=-1)  # (N, D)
+                
+                mse = F.mse_loss(dinov2_feat_j_norm, dit_feat_j_norm, reduction='mean')
+                mse_loss += mse
         
-        l1_loss = l1_loss / len(dinov2_features)
+        mse_loss = mse_loss / (len(dinov2_features) * bsz)
+        return mse_loss
+    
+    def _l1_loss(
+        self,
+        dinov2_features: List[torch.Tensor],
+        dit_features: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        L1 loss.
+        Note: L1 is scale-sensitive, so we normalize features before computing loss
+        to avoid being dominated by magnitude differences.
+        
+        Args:
+            dinov2_features: List of DINOv2 feature tensors
+            dit_features: DiT feature tensor
+            
+        Returns:
+            Scalar loss value
+        """
+        l1_loss = 0.0
+        bsz = dinov2_features[0].shape[0]
+        
+        for dinov2_feat in dinov2_features:
+            # Ensure same dimensions
+            if dinov2_feat.shape[-1] != dit_features.shape[-1]:
+                raise ValueError(
+                    f"Feature dimension mismatch: DINOv2 {dinov2_feat.shape[-1]} vs DiT {dit_features.shape[-1]}. "
+                    "Use projector in model to match dimensions."
+                )
+            
+            # Normalize both features before L1 (L1 is scale-sensitive)
+            # This matches the pattern of normalizing in loss function
+            for j in range(bsz):
+                dinov2_feat_j = dinov2_feat[j]  # (N, D)
+                dit_feat_j = dit_features[j]  # (N, D)
+                
+                # Normalize both features
+                dinov2_feat_j_norm = F.normalize(dinov2_feat_j, dim=-1)  # (N, D)
+                dit_feat_j_norm = F.normalize(dit_feat_j, dim=-1)  # (N, D)
+                
+                l1 = F.l1_loss(dinov2_feat_j_norm, dit_feat_j_norm, reduction='mean')
+                l1_loss += l1
+        
+        l1_loss = l1_loss / (len(dinov2_features) * bsz)
         return l1_loss
 

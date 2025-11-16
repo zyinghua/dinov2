@@ -126,6 +126,8 @@ class DINOv2WithAlignment(nn.Module):
             handle.remove()
         
         # Project to DiT dimension if projector is enabled
+        # Note: Following REPA's approach, we do NOT normalize before projection
+        # Normalization happens in the loss function instead
         if self.projector is not None:
             B, N, D = patch_tokens.shape
             # Ensure dtype matches projector (FSDP might use mixed precision for backbone)
@@ -135,7 +137,7 @@ class DINOv2WithAlignment(nn.Module):
             projected = projected.reshape(B, N, self.dit_hidden_dim)  # (B, N, dit_hidden_dim)
             alignment_features = [projected]
         else:
-            # Return raw features (for sanity check with DINOv2 teacher)
+            # Return raw features (normalization happens in loss, matching REPA)
             alignment_features = [patch_tokens]
         
         return None, alignment_features
