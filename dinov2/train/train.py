@@ -190,6 +190,7 @@ def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5):
         cfg.crops.local_crops_number,
         global_crops_size=cfg.crops.global_crops_size,
         local_crops_size=cfg.crops.local_crops_size,
+        noise_std=getattr(cfg.crops, "noise_std", 0.0),
     )
 
     collate_fn = partial(
@@ -309,6 +310,7 @@ def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5):
 
 def main(args):
     cfg = setup(args)
+    print(f"cfg show: {cfg}")
 
     model = SSLMetaArch(cfg).to(torch.device("cuda"))
     model.prepare_for_distributed_training()

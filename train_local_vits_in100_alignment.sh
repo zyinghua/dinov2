@@ -2,8 +2,8 @@
 export PYTHONPATH=/root/dinov2:$PYTHONPATH
 torchrun --nproc_per_node=1 \
     dinov2/run/train/local_train.py \
-    --config-file dinov2/configs/train/vits16.yaml \
-    --output-dir /root/autodl-tmp/exp-out/base_dinov2_in100_output \
+    --config-file dinov2/configs/train/vits16_alignment.yaml \
+    --output-dir /root/autodl-tmp/exp-out/base_dinov2_in100_alignment_output \
     --save_frequency 10 \
     --max_to_keep 3 \
     train.dataset_path=ImageNet:split=TRAIN:root=/root/autodl-tmp/mini-imagenet:extra=/root/autodl-tmp/mini-imagenet

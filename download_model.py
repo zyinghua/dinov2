@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 
 # create target dir for pretrained weights
-MODEL_PATH = "/users/mchakra3/scratch/dinov2_data/pretrained"
+MODEL_PATH = "~/scratch/dinov2_data/pretrained"
 
 out_dir = Path(MODEL_PATH)
 out_dir.mkdir(parents=True, exist_ok=True)

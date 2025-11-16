@@ -21,7 +21,7 @@ from dinov2.models.vision_transformer import BlockChunk
 # Alignment imports
 from dinov2.alignment_model import DINOv2WithAlignment
 from dinov2.alignment_loss import AlignmentLoss
-from dinov2.extract_dit_features import DiTFeatureExtractor
+from dinov2.extract_dinov2_features import DINOv2FeatureExtractor
 from dinov2.alignment_utils import preprocess_for_alignment
 
 
@@ -56,7 +56,7 @@ class SSLMetaArch(nn.Module):
         # Alignment setup
         self.do_alignment = False
         self.alignment_wrapper = None  # Only used for alignment feature extraction
-        self.dit_extractor = None
+        self.dinov2_extractor = None  # DINOv2 feature extractor for sanity check
         self.alignment_loss_fn = None
         self.alignment_loss_weight = 0.0
         
@@ -69,22 +69,36 @@ class SSLMetaArch(nn.Module):
             logger.info(f"OPTIONS -- ALIGNMENT -- dit_timestep: {alignment_cfg.dit_timestep}")
             
 
+            # For sanity check with DINOv2 teacher, disable projector to get raw features
+            # Set projector_dim to None or 0 to disable projection
+            use_projection = False  # Set to False for sanity check (raw features), True for DiT alignment
+            
             self.alignment_wrapper = DINOv2WithAlignment(
                 base_model=student_backbone,
                 alignment_depth=alignment_cfg.alignment_depth,
-                dit_hidden_dim=alignment_cfg.dit_hidden_dim,
-                projector_dim=alignment_cfg.projector_dim,
+                dit_hidden_dim=alignment_cfg.dit_hidden_dim if use_projection else None,
+                projector_dim=alignment_cfg.projector_dim if use_projection else None,
             )
 
-            # Initialize DiT feature extractor
-            dit_image_size = 16 * cfg.student.patch_size
-            self.dit_extractor = DiTFeatureExtractor(
-                dit_model_path=alignment_cfg.dit_model_path,
-                dit_model_name=alignment_cfg.dit_model_name,
-                image_size=dit_image_size,
-                dit_extraction_layer=alignment_cfg.dit_extraction_layer,
-                dit_timestep=alignment_cfg.dit_timestep,
+            teacher_checkpoint_path = "/root/autodl-tmp/exp-out/base_dinov2_in100_output/eval/training_249999/teacher_checkpoint.pth"
+            patch_size = cfg.student.patch_size
+            img_size = cfg.crops.global_crops_size
+            self.dinov2_extractor = DINOv2FeatureExtractor(
+                model_path=teacher_checkpoint_path,
+                arch=cfg.student.arch,
+                patch_size=patch_size,
+                img_size=img_size,
+                extraction_layer=alignment_cfg.alignment_depth,  # Extract from same layer as alignment
                 device="cuda",
+                layerscale=getattr(cfg.student, 'layerscale', 1.0),
+                ffn_layer=getattr(cfg.student, 'ffn_layer', 'mlp'),
+                block_chunks=getattr(cfg.student, 'block_chunks', 0),
+                qkv_bias=getattr(cfg.student, 'qkv_bias', True),
+                proj_bias=getattr(cfg.student, 'proj_bias', True),
+                ffn_bias=getattr(cfg.student, 'ffn_bias', True),
+                num_register_tokens=getattr(cfg.student, 'num_register_tokens', 0),
+                interpolate_offset=getattr(cfg.student, 'interpolate_offset', 0.0),
+                interpolate_antialias=getattr(cfg.student, 'interpolate_antialias', False),
             )
             
             # Initialize alignment loss
@@ -289,10 +303,9 @@ class SSLMetaArch(nn.Module):
                 # Get patch_size from the base model to compute correct target resolution
                 patch_size = self.student.backbone.patch_size
                 full_images = preprocess_for_alignment(full_images_raw, patch_size=patch_size, device=full_images_raw.device)
-                
+                # Use alignment_wrapper ONLY for alignment feature extraction
                 student_alignment_output = self.alignment_wrapper.forward_features(
-                    backbone=self.student["backbone"],
-                    x=full_images,
+                    full_images,
                     masks=None,
                     return_alignment_features=True
                 )
@@ -417,15 +430,16 @@ class SSLMetaArch(nn.Module):
                 full_images_raw = images["collated_full_images_raw"].cuda(non_blocking=True)
                 # Convert from [0, 1] range to [-1, 1] range for DiT VAE
                 # full_images_raw is in [0, 1] range (from ToTensor)
-                full_images_for_dit = full_images_raw * 2.0 - 1.0
+                patch_size = self.student.backbone.patch_size
+                full_images_for_dinov2 = preprocess_for_alignment(full_images_raw, patch_size=patch_size, device=full_images_raw.device)
                 
                 # Extract DiT features without gradients (DiT is the teacher)
                 with torch.no_grad():
-                    dit_features = self.dit_extractor.extract_features(full_images_for_dit)
+                    dinov2_teacher_features = self.dinov2_extractor.extract_features(full_images_for_dinov2)
                 
                 alignment_loss = self.alignment_loss_fn(
                     dinov2_features=alignment_features,
-                    dit_features=dit_features
+                    dit_features=dinov2_teacher_features
                 )
                 
                 # Add weighted alignment loss
@@ -493,3 +507,8 @@ class SSLMetaArch(nn.Module):
             self.student[k] = get_fsdp_wrapper(student_model_cfg, modules_to_wrap={BlockChunk})(self.student[k])
             teacher_model_cfg = self.cfg.compute_precision.teacher[k]
             self.teacher[k] = get_fsdp_wrapper(teacher_model_cfg, modules_to_wrap={BlockChunk})(self.teacher[k])
+        
+        # After FSDP wrapping, update alignment_wrapper to use the wrapped student backbone
+        # This ensures alignment_wrapper.base_model always points to the actual trained model
+        if self.alignment_wrapper is not None:
+            self.alignment_wrapper.base_model = self.student["backbone"]

@@ -1,6 +1,7 @@
 import torch
+import os
 
-checkpoint_path = "/users/mchakra3/scratch/dinov2_data/pretrained/base_dinov2_vits_in100_200ep.pth"
+checkpoint_path = f"{os.getenv('HOME')}/scratch/dinov2_data/pretrained/base_dinov2_vits_in100_200ep.pth"
 checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
 # If the checkpoint contains 'model', extract it first
@@ -18,7 +19,7 @@ print(f"Extracted {len(teacher_state_dict)} teacher keys")
 
 
 # Save the teacher-only state dict
-out_path = "/users/mchakra3/scratch/dinov2_data/pretrained/base_dinov2_vits_in100_200ep_extracted.pth"
+out_path = f"{os.getenv('HOME')}/scratch/dinov2_data/pretrained/base_dinov2_vits_in100_200ep_extracted.pth"
 torch.save(teacher_state_dict, out_path)
 print(f"Saved teacher state dict to: {out_path}")
 

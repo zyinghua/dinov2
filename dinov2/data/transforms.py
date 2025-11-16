@@ -21,31 +21,31 @@ class GaussianBlur(transforms.RandomApply):
         super().__init__(transforms=[transform], p=keep_p)
 
 
-class GaussianNoise(torch.nn.Module):
+class GaussianNoise:
     """
-    Add Gaussian noise to an image.
-    Noise is applied to the tensor after normalization.
+    Apply Gaussian noise to an image.
+    The image should be a tensor in [0, 1] range (after ToTensor).
     """
 
-    def __init__(self, std: float = 0.1):
+    def __init__(self, std: float = 0.0):
         """
         Args:
-            std: Standard deviation of the Gaussian noise
+            std: Standard deviation of the Gaussian noise. If 0, no noise is applied.
         """
-        super().__init__()
         self.std = std
 
-    def forward(self, x):
+    def __call__(self, tensor):
         """
         Args:
-            x: Tensor image
+            tensor: Tensor image in [0, 1] range.
         Returns:
-            Image with Gaussian noise
+            Tensor: Tensor image with Gaussian noise added, clamped to [0, 1].
         """
-        if self.std > 0:
-            noise = torch.randn_like(x) * self.std
-            x = x + noise
-        return x
+        if self.std == 0.0:
+            return tensor
+        noise = torch.randn_like(tensor) * self.std
+        noisy_tensor = tensor + noise
+        return torch.clamp(noisy_tensor, 0.0, 1.0)
 
 
 class MaybeToTensor(transforms.ToTensor):
@@ -91,14 +91,10 @@ def make_classification_train_transform(
     transforms_list = [transforms.RandomResizedCrop(crop_size, interpolation=interpolation)]
     if hflip_prob > 0.0:
         transforms_list.append(transforms.RandomHorizontalFlip(hflip_prob))
-    transforms_list.extend(
-        [
-            MaybeToTensor(),
-            make_normalize_transform(mean=mean, std=std),
-        ]
-    )
+    transforms_list.append(MaybeToTensor())
     if noise_std > 0.0:
         transforms_list.append(GaussianNoise(std=noise_std))
+    transforms_list.append(make_normalize_transform(mean=mean, std=std))
     return transforms.Compose(transforms_list)
 
 
@@ -117,8 +113,8 @@ def make_classification_eval_transform(
         transforms.Resize(resize_size, interpolation=interpolation),
         transforms.CenterCrop(crop_size),
         MaybeToTensor(),
-        make_normalize_transform(mean=mean, std=std),
     ]
     if noise_std > 0.0:
         transforms_list.append(GaussianNoise(std=noise_std))
+    transforms_list.append(make_normalize_transform(mean=mean, std=std))
     return transforms.Compose(transforms_list)
