@@ -15,7 +15,7 @@ alignment:
   
   # DINOv2 alignment settings
   alignment_depth: 4  # Which DINOv2 layer to extract features from (0-indexed, -1 = no alignment)
-  alignment_loss_weight: 0.5  # Weight for alignment loss in total loss
+  alignment_loss_weight: 2  # Weight for alignment loss in total loss
   
   # DiT model settings
   dit_model_path: "/root/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt"  # Path to pretrained DiT checkpoint
