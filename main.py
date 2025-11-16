@@ -204,7 +204,7 @@ def main(args):
     timesteps=['0201'] #, '0101']
     imagetypes = ['clean'] #, 'gaussian']
 
-    # read precomputed features and split into 4 fold 
+    #################### read precomputed features and split into 4 fold  #######################
     feature_dir = "../../../scratch/linprobe_DiT_XL_2"
     features = []
     labels = []
@@ -231,6 +231,8 @@ def main(args):
                     start = time.time()
                     X_train, X_val = X[train_idx], X[val_idx]
                     y_train, y_val = y[train_idx], y[val_idx]
+    #################################################################################################
+
                     linear_classifiers = run_eval_linear(
                         fold_idx=fold_idx,
                         batch_size=args.batch_size,
