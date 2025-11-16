@@ -74,21 +74,7 @@ class DINOv2WithAlignment(nn.Module):
         backbone: DinoVisionTransformer,
         x: torch.Tensor, 
         masks: Optional[torch.Tensor] = None,
-        return_alignment_features: bool = False
     ):
-        """
-        Forward features for single tensor input.
-        When return_alignment_features=False, delegates to backbone for exact same behavior.
-        
-        Args:
-            backbone: DINOv2 backbone model (passed as parameter to avoid storing/updating)
-            x: Input images
-            masks: Optional masks
-            return_alignment_features: Whether to return alignment features
-        """
-        if not return_alignment_features or self.alignment_depth == -1:
-            raise ValueError("Alignment depth is not set or is -1 when calling alignment")
-        
         # Use hooks with forward_features (which FSDP handles correctly)
         # get_intermediate_layers doesn't work with FSDP, but forward_features does
         extracted_features = {}
@@ -140,4 +126,4 @@ class DINOv2WithAlignment(nn.Module):
             # Return raw features (normalization happens in loss, matching REPA)
             alignment_features = [patch_tokens]
         
-        return None, alignment_features
+        return alignment_features

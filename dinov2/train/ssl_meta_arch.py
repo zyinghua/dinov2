@@ -281,25 +281,18 @@ class SSLMetaArch(nn.Module):
 
         loss_accumulator = 0  # for backprop
         
-        # Extract alignment features if enabled (using full resized image, not crops)
+        # Extract alignment features if enabled (using full resized image)
         alignment_features = None
         if self.do_alignment and self.alignment_wrapper is not None and self.alignment_wrapper.alignment_depth != -1:
             if "collated_full_images_raw" in images:
                 full_images_raw = images["collated_full_images_raw"].cuda(non_blocking=True)
-                # Get patch_size from the base model to compute correct target resolution
-                patch_size = self.student.backbone.patch_size
-                full_images = preprocess_for_alignment(full_images_raw, patch_size=patch_size, device=full_images_raw.device)
+                full_images = preprocess_for_alignment(full_images_raw, patch_size=self.student.backbone.patch_size, device=full_images_raw.device)
                 
-                student_alignment_output = self.alignment_wrapper.forward_features(
+                alignment_features = self.alignment_wrapper.forward_features(
                     backbone=self.student["backbone"],
                     x=full_images,
-                    masks=None,
-                    return_alignment_features=True
+                    masks=None
                 )
-                if isinstance(student_alignment_output, tuple):
-                    _, alignment_features = student_alignment_output
-                else:
-                    alignment_features = None
         
         # Standard forward pass for all crops (for DINO/IBOT losses)
         student_global_backbone_output_dict, student_local_backbone_output_dict = self.student.backbone(
@@ -412,23 +405,17 @@ class SSLMetaArch(nn.Module):
         # Alignment loss: DiT features as "teacher", student alignment features as "student"
         if self.do_alignment and alignment_features is not None:
             # Extract DiT features from full original image (same as DINOv2 alignment)
-            # DiT is the "teacher" so we don't want gradients flowing to it
             if "collated_full_images_raw" in images:
                 full_images_raw = images["collated_full_images_raw"].cuda(non_blocking=True)
-                # Convert from [0, 1] range to [-1, 1] range for DiT VAE
-                # full_images_raw is in [0, 1] range (from ToTensor)
-                full_images_for_dit = full_images_raw * 2.0 - 1.0
-                
-                # Extract DiT features without gradients (DiT is the teacher)
+
                 with torch.no_grad():
-                    dit_features = self.dit_extractor.extract_features(full_images_for_dit)
+                    dit_features = self.dit_extractor.extract_features(full_images_raw)
                 
                 alignment_loss = self.alignment_loss_fn(
                     dinov2_features=alignment_features,
                     dit_features=dit_features
                 )
                 
-                # Add weighted alignment loss
                 loss_accumulator += alignment_loss * self.alignment_loss_weight
                 loss_dict["alignment_loss"] = alignment_loss
 

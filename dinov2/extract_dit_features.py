@@ -88,6 +88,9 @@ class DiTFeatureExtractor:
         Returns:
             Features of shape (B, N_patches, hidden_dim)
         """
+        # Convert from [0, 1] range to [-1, 1] range for DiT VAE
+        images = images * 2.0 - 1.0
+        
         batch_size = images.shape[0]
         
         # Encode images to latents using VAE
