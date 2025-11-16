@@ -132,6 +132,12 @@ def get_args_parser(
         type=str,
         help="Path to a file containing a mapping to adjust classifier outputs",
     )
+    parser.add_argument(
+        "--train-noise-std",
+        type=float,
+        default=0.0,
+        help="Standard deviation of Gaussian noise to add to training data (0 = no noise)",
+    )
     parser.set_defaults(
         train_dataset_str="ImageNet:split=TRAIN",
         val_dataset_str="ImageNet:split=VAL",
@@ -480,6 +486,7 @@ def run_eval_linear(
     test_class_mapping_fpaths=[None],
     val_metric_type=MetricType.MEAN_ACCURACY,
     test_metric_types=None,
+    train_noise_std=0.0,
 ):
     seed = 0
 
@@ -491,7 +498,7 @@ def run_eval_linear(
         assert len(test_metric_types) == len(test_dataset_strs)
     assert len(test_dataset_strs) == len(test_class_mapping_fpaths)
 
-    train_transform = make_classification_train_transform()
+    train_transform = make_classification_train_transform(noise_std=train_noise_std)
     train_dataset = make_dataset(
         dataset_str=train_dataset_str,
         transform=train_transform,
@@ -614,6 +621,7 @@ def main(args):
         test_metric_types=args.test_metric_types,
         val_class_mapping_fpath=args.val_class_mapping_fpath,
         test_class_mapping_fpaths=args.test_class_mapping_fpaths,
+        train_noise_std=args.train_noise_std,
     )
     return 0
 

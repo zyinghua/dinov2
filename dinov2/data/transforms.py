@@ -21,6 +21,33 @@ class GaussianBlur(transforms.RandomApply):
         super().__init__(transforms=[transform], p=keep_p)
 
 
+class GaussianNoise(torch.nn.Module):
+    """
+    Add Gaussian noise to an image.
+    Noise is applied to the tensor after normalization.
+    """
+
+    def __init__(self, std: float = 0.1):
+        """
+        Args:
+            std: Standard deviation of the Gaussian noise
+        """
+        super().__init__()
+        self.std = std
+
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor image
+        Returns:
+            Image with Gaussian noise
+        """
+        if self.std > 0:
+            noise = torch.randn_like(x) * self.std
+            x = x + noise
+        return x
+
+
 class MaybeToTensor(transforms.ToTensor):
     """
     Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor, or keep as is if already a tensor.
@@ -59,6 +86,7 @@ def make_classification_train_transform(
     hflip_prob: float = 0.5,
     mean: Sequence[float] = IMAGENET_DEFAULT_MEAN,
     std: Sequence[float] = IMAGENET_DEFAULT_STD,
+    noise_std: float = 0.0,
 ):
     transforms_list = [transforms.RandomResizedCrop(crop_size, interpolation=interpolation)]
     if hflip_prob > 0.0:
@@ -69,6 +97,8 @@ def make_classification_train_transform(
             make_normalize_transform(mean=mean, std=std),
         ]
     )
+    if noise_std > 0.0:
+        transforms_list.append(GaussianNoise(std=noise_std))
     return transforms.Compose(transforms_list)
 
 
@@ -81,6 +111,7 @@ def make_classification_eval_transform(
     crop_size: int = 224,
     mean: Sequence[float] = IMAGENET_DEFAULT_MEAN,
     std: Sequence[float] = IMAGENET_DEFAULT_STD,
+    noise_std: float = 0.0,
 ) -> transforms.Compose:
     transforms_list = [
         transforms.Resize(resize_size, interpolation=interpolation),
@@ -88,4 +119,6 @@ def make_classification_eval_transform(
         MaybeToTensor(),
         make_normalize_transform(mean=mean, std=std),
     ]
+    if noise_std > 0.0:
+        transforms_list.append(GaussianNoise(std=noise_std))
     return transforms.Compose(transforms_list)
