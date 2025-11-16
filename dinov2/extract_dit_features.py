@@ -4,7 +4,6 @@ Module to extract DiT intermediate features for alignment with DINOv2.
 import torch
 import torch.nn as nn
 from diffusers.models import AutoencoderKL
-from typing import Optional, Tuple, List
 
 # Import DiT models from thirdparty (following DINOv2's pattern for external dependencies)
 from dinov2.thirdparty.DiT.models import DiT_models
@@ -71,19 +70,25 @@ class DiTFeatureExtractor:
             self.actual_extraction_layer = self.num_blocks - 1
         else:
             self.actual_extraction_layer = min(self.dit_extraction_layer, self.num_blocks - 1)
+
+        self.num_classes = self.dit_model.y_embedder.num_classes
+        if not self.dit_model.y_embedder.dropout_prob > 0:
+            raise ValueError(
+                f"DiT model does not support CFG (dropout_prob=0). "
+                f"Model must be trained with class_dropout_prob > 0 for unconditional behavior."
+            )
     
     @torch.no_grad()
     def extract_features(
         self, 
-        images: torch.Tensor,
-        class_labels: Optional[torch.Tensor] = None
+        images: torch.Tensor
     ) -> torch.Tensor:
         """
-        Extract DiT intermediate features from images.
+        Extract DiT intermediate features from images using unconditional (null class) behavior.
+        Always uses null class (num_classes) for CFG, matching DiT's unconditional inference.
         
         Args:
-            images: Input images of shape (B, 3, H, W) in range [-1, 1]
-            class_labels: Optional class labels of shape (B,)
+            images: Input images of shape (B, 3, H, W) in range [0, 1]
             
         Returns:
             Features of shape (B, N_patches, hidden_dim)
@@ -100,11 +105,9 @@ class DiTFeatureExtractor:
         # Prepare timestep (convert to tensor matching batch size)
         t = torch.full((batch_size,), self.dit_timestep, device=self.device, dtype=torch.float32)
         
-        # Prepare class labels (use 0 if not provided)
-        if class_labels is None:
-            y = torch.zeros(batch_size, dtype=torch.long, device=self.device)
-        else:
-            y = class_labels.to(self.device)
+        # Always use null class (num_classes) for unconditional CFG behavior
+        # This matches DiT's classifier-free guidance where null class is at index num_classes
+        y = torch.full((batch_size,), self.num_classes, dtype=torch.long, device=self.device)
         
         # Forward through DiT with intermediate feature extraction
         features = self._forward_dit_with_extraction(latents, t, y)
