@@ -86,7 +86,7 @@ class AlignmentLoss:
                 dit_feat_j_norm = F.normalize(dit_feat_j, dim=-1)  # (N, D)
                 
                 cosine_sim = (dinov2_feat_j_norm * dit_feat_j_norm).sum(dim=-1)  # (N,)
-                proj_loss += mean_flat(1.0 - cosine_sim)  # Average over patches for this batch item
+                proj_loss += mean_flat(-cosine_sim)  # Average over patches for this batch item
         
         # Average over number of DINOv2 feature sets and batch size (matching REPA)
         proj_loss = proj_loss / (len(dinov2_features) * bsz)
