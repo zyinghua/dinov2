@@ -132,12 +132,6 @@ def get_args_parser(
         type=str,
         help="Path to a file containing a mapping to adjust classifier outputs",
     )
-    parser.add_argument(
-        "--noise-std",
-        type=float,
-        default=0.0,
-        help="Standard deviation of Gaussian noise to add to training images (default: 0.0, no noise)",
-    )
     parser.set_defaults(
         train_dataset_str="ImageNet:split=TRAIN",
         val_dataset_str="ImageNet:split=VAL",
@@ -414,10 +408,10 @@ def eval_linear(
     return val_results_dict, feature_model, linear_classifiers, iteration
 
 
-def make_eval_data_loader(test_dataset_str, batch_size, num_workers, metric_type, noise_std=0.0):
+def make_eval_data_loader(test_dataset_str, batch_size, num_workers, metric_type):
     test_dataset = make_dataset(
         dataset_str=test_dataset_str,
-        transform=make_classification_eval_transform(noise_std=noise_std),
+        transform=make_classification_eval_transform(),
     )
     test_data_loader = make_data_loader(
         dataset=test_dataset,
@@ -445,12 +439,11 @@ def test_on_datasets(
     best_classifier_on_val,
     prefixstring="",
     test_class_mappings=[None],
-    noise_std=0.0,
 ):
     results_dict = {}
     for test_dataset_str, class_mapping, metric_type in zip(test_dataset_strs, test_class_mappings, test_metric_types):
         logger.info(f"Testing on {test_dataset_str}")
-        test_data_loader = make_eval_data_loader(test_dataset_str, batch_size, num_workers, metric_type, noise_std=noise_std)
+        test_data_loader = make_eval_data_loader(test_dataset_str, batch_size, num_workers, metric_type)
         dataset_results_dict = evaluate_linear_classifiers(
             feature_model,
             remove_ddp_wrapper(linear_classifiers),
@@ -487,7 +480,6 @@ def run_eval_linear(
     test_class_mapping_fpaths=[None],
     val_metric_type=MetricType.MEAN_ACCURACY,
     test_metric_types=None,
-    noise_std=0.0,
 ):
     seed = 0
 
@@ -499,7 +491,7 @@ def run_eval_linear(
         assert len(test_metric_types) == len(test_dataset_strs)
     assert len(test_dataset_strs) == len(test_class_mapping_fpaths)
 
-    train_transform = make_classification_train_transform(noise_std=noise_std)
+    train_transform = make_classification_train_transform()
     train_dataset = make_dataset(
         dataset_str=train_dataset_str,
         transform=train_transform,
@@ -538,7 +530,7 @@ def run_eval_linear(
         drop_last=True,
         persistent_workers=True,
     )
-    val_data_loader = make_eval_data_loader(val_dataset_str, batch_size, num_workers, val_metric_type, noise_std=noise_std)
+    val_data_loader = make_eval_data_loader(val_dataset_str, batch_size, num_workers, val_metric_type)
 
     checkpoint_period = save_checkpoint_frequency * epoch_length
 
@@ -592,7 +584,6 @@ def run_eval_linear(
             val_results_dict["best_classifier"]["name"],
             prefixstring="",
             test_class_mappings=test_class_mappings,
-            noise_std=noise_std,
         )
     results_dict["best_classifier"] = val_results_dict["best_classifier"]["name"]
     results_dict[f"{val_dataset_str}_accuracy"] = 100.0 * val_results_dict["best_classifier"]["accuracy"]
@@ -623,7 +614,6 @@ def main(args):
         test_metric_types=args.test_metric_types,
         val_class_mapping_fpath=args.val_class_mapping_fpath,
         test_class_mapping_fpaths=args.test_class_mapping_fpaths,
-        noise_std=args.noise_std,
     )
     return 0
 
