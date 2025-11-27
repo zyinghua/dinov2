@@ -20,11 +20,11 @@ alignment:
   # DiT model settings
   dit_model_path: "/root/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt"  # Path to pretrained DiT checkpoint
   dit_model_name: "DiT-XL/2"  # DiT architecture name (e.g., "DiT-XL/2", "DiT-L/2", "DiT-B/2")
-  dit_extraction_layer: -1  # Which DiT layer to extract features from (-1 = last layer, 0-indexed)
+  dit_extraction_layer: 14  # Which DiT layer to extract features from (-1 = last layer, 0-indexed)
   dit_timestep: 1.0  # Timestep for DiT forward pass (1.0 = most clean version)
   
   # Projector settings
-  dit_hidden_dim: 1152  # DiT hidden dimension (1152 for XL, 1024 for L, 768 for B)
+  dit_hidden_dim: 1152  # DiT hidden dimension, 1152 for XL
   projector_dim: 2048  # MLP projector hidden dimension (same as REPA)
   
   # Loss function settings
