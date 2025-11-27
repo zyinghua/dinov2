@@ -1,5 +1,5 @@
 train:
-  batch_size_per_gpu: 5
+  batch_size_per_gpu: 10
 student:
   arch: vit_small
   patch_size: 16
