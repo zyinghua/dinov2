@@ -10,11 +10,12 @@ evaluation:
   eval_period_iterations: 6250
 
 # Alignment configuration for DINOv2-DiT alignment
+# Trial 1: DINOv2 layer 10, DiT layer 14, fixed timestep, full alignment (no curriculum learning)
 alignment:
   enabled: true  # Set to false to disable alignment
   
   # DINOv2 alignment settings
-  alignment_depth: 4  # Which DINOv2 layer to extract features from (0-indexed, -1 = no alignment)
+  alignment_depth: 10  # Which DINOv2 layer to extract features from (0-indexed, -1 = no alignment)
   alignment_loss_weight: 0.1  # Weight for alignment loss in total loss
   
   # DiT model settings

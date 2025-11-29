@@ -10,6 +10,7 @@ evaluation:
   eval_period_iterations: 6250
 
 # Alignment configuration for DINOv2-DiT alignment
+# Trial 2: DINOv2 layer 4, DiT last layer, fixed timestep, full alignment (no curriculum learning)
 alignment:
   enabled: true  # Set to false to disable alignment
   
@@ -20,7 +21,7 @@ alignment:
   # DiT model settings
   dit_model_path: "/root/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt"  # Path to pretrained DiT checkpoint
   dit_model_name: "DiT-XL/2"  # DiT architecture name (e.g., "DiT-XL/2", "DiT-L/2", "DiT-B/2")
-  dit_extraction_layer: 14  # Which DiT layer to extract features from (-1 = last layer, 0-indexed)
+  dit_extraction_layer: -1  # Which DiT layer to extract features from (-1 = last layer, 0-indexed)
   dit_timestep: 350.0  # Fixed timestep for DiT forward pass (0-999, 350 = moderate noise level, good balance for noisy training data)
   
   # Projector settings
