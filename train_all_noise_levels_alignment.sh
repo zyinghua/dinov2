@@ -7,7 +7,7 @@
 export PYTHONPATH=/root/dinov2:$PYTHONPATH
 
 # Noise levels to process
-NOISE_LEVELS=(25 50 75 100)
+NOISE_LEVELS=(100 75 50 25)
 
 for noise_std in "${NOISE_LEVELS[@]}"; do
     echo "=========================================="
@@ -41,12 +41,6 @@ for noise_std in "${NOISE_LEVELS[@]}"; do
     if [ -d "$OUTPUT_DIR" ]; then
         find "$OUTPUT_DIR" -maxdepth 1 -name "model_*.pth" ! -name "model_0149999.pth" -type f -delete
         echo "Cleaned up model checkpoints in $OUTPUT_DIR"
-    fi
-    
-    # Delete all pth files in eval/ directories except in training_149999
-    if [ -d "$OUTPUT_DIR/eval" ]; then
-        find "$OUTPUT_DIR/eval" -mindepth 1 -maxdepth 1 -type d ! -name "training_149999" -exec rm -rf {} \;
-        echo "Cleaned up eval subdirectories (kept training_149999)"
     fi
     
     echo "Checkpoint cleanup completed for noise_std=$noise_std"
@@ -122,11 +116,6 @@ else
         find "$OUTPUT_DIR" -maxdepth 1 -name "model_*.pth" ! -name "model_0149999.pth" -type f -delete
         echo "Cleaned up model checkpoints in $OUTPUT_DIR"
     fi
-    
-    if [ -d "$OUTPUT_DIR/eval" ]; then
-        find "$OUTPUT_DIR/eval" -mindepth 1 -maxdepth 1 -type d ! -name "training_149999" -exec rm -rf {} \;
-        echo "Cleaned up eval subdirectories (kept training_149999)"
-    fi
     echo "Checkpoint cleanup completed for Trial 1"
     
     # Step 3: Linear probing
@@ -191,11 +180,6 @@ else
     if [ -d "$OUTPUT_DIR" ]; then
         find "$OUTPUT_DIR" -maxdepth 1 -name "model_*.pth" ! -name "model_0149999.pth" -type f -delete
         echo "Cleaned up model checkpoints in $OUTPUT_DIR"
-    fi
-    
-    if [ -d "$OUTPUT_DIR/eval" ]; then
-        find "$OUTPUT_DIR/eval" -mindepth 1 -maxdepth 1 -type d ! -name "training_149999" -exec rm -rf {} \;
-        echo "Cleaned up eval subdirectories (kept training_149999)"
     fi
     echo "Checkpoint cleanup completed for Trial 2"
     
