@@ -84,11 +84,11 @@ class DINOv2WithAlignment(nn.Module):
         
         # Register hook on the target block - access blocks directly (FSDP handles it)
         blocks = backbone.blocks
-        if self.alignment_depth < len(blocks):
-            handle = blocks[self.alignment_depth].register_forward_hook(hook_fn)
-        else:
-            warnings.warn("Alignment depth is greater than the number of blocks")
-            return None, None
+        if self.alignment_depth >= len(blocks):
+            warnings.warn(f"Alignment depth {self.alignment_depth} >= num_blocks {len(blocks)}")
+            return None
+        
+        handle = blocks[self.alignment_depth].register_forward_hook(hook_fn)
         
         try:
             # Call backbone the same way as normal training loop (not forward_features directly)
@@ -97,7 +97,7 @@ class DINOv2WithAlignment(nn.Module):
             
             if 'features' not in extracted_features:
                 warnings.warn("No features extracted from alignment depth")
-                return None, None
+                return None
             
             x_intermediate = extracted_features['features']
 
