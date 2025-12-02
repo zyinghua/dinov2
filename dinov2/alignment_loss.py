@@ -37,7 +37,7 @@ class AlignmentLoss:
         self.enable_diagnostics = enable_diagnostics
         self.diagnostic_freq = diagnostic_freq
         self.call_count = 0
-        
+
         # Map loss type to loss function
         self.loss_functions = {
             "cosine_sim": self._cosine_similarity_loss,
@@ -45,6 +45,7 @@ class AlignmentLoss:
             "l1": self._l1_loss,
             "cosine_whitened": self._cosine_whitened_loss,
             "global": self._global_alignment_loss,
+            "cka": self._cka_loss,
         }
         
         if loss_type not in self.loss_functions:
@@ -246,6 +247,7 @@ class AlignmentLoss:
         
         l1_loss = l1_loss / (len(dinov2_features) * bsz)
         return l1_loss
+
     
     def _normalize_for_alignment(self, x, eps=1e-5):
         # Center over patches (remove mean direction)
@@ -308,3 +310,71 @@ class AlignmentLoss:
         proj_loss = proj_loss / (len(dinov2_features) * bsz)
         return proj_loss
     
+    @staticmethod
+    def _linear_cka(
+        x: torch.Tensor,
+        y: torch.Tensor,
+        eps: float = 1e-12,
+    ) -> torch.Tensor:
+        """
+        Compute linear CKA similarity between two feature matrices.
+
+        Args:
+            x: Feature matrix of shape (N, D_x)
+            y: Feature matrix of shape (N, D_y)
+            eps: Numerical stability epsilon
+
+        Returns:
+            Scalar tensor with CKA similarity in [0, 1]
+        """
+        x_centered = x - x.mean(dim=0, keepdim=True)
+        y_centered = y - y.mean(dim=0, keepdim=True)
+
+        cross_cov = x_centered.transpose(0, 1) @ y_centered  # (D_x, D_y)
+        numerator = (cross_cov ** 2).sum()
+
+        x_gram = x_centered.transpose(0, 1) @ x_centered
+        y_gram = y_centered.transpose(0, 1) @ y_centered
+
+        denom = torch.norm(x_gram, p="fro") * torch.norm(y_gram, p="fro")
+        denom = torch.clamp(denom, min=eps)
+
+        return numerator / denom
+
+    def _cka_loss(
+        self,
+        dinov2_features: List[torch.Tensor],
+        dit_features: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Centered Kernel Alignment loss.
+
+        Unlike cosine/L1/MSE losses, CKA can compare representations with different
+        embedding dimensions. We minimize (1 - CKA) averaged over feature lists and batch.
+
+        Args:
+            dinov2_features: List of tensors with shape (B, N, D_i)
+            dit_features: Tensor with shape (B, N, D_j)
+
+        Returns:
+            Scalar tensor with average CKA loss.
+        """
+        total_loss = 0.0
+        bsz = dit_features.shape[0]
+
+        for dinov2_feat in dinov2_features:
+            if dinov2_feat.shape[:2] != dit_features.shape[:2]:
+                raise ValueError(
+                    "CKA requires matching batch size and number of patches: "
+                    f"DINOv2 {dinov2_feat.shape[:2]} vs DiT {dit_features.shape[:2]}"
+                )
+
+            for j in range(bsz):
+                dinov2_feat_j = dinov2_feat[j]
+                dit_feat_j = dit_features[j]
+
+                cka_value = self._linear_cka(dinov2_feat_j, dit_feat_j)
+                total_loss += (1.0 - cka_value)
+
+        total_loss = total_loss / (len(dinov2_features) * bsz)
+        return total_loss
