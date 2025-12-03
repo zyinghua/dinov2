@@ -15,7 +15,6 @@ import sys
 from dinov2.logging import setup_logging
 from dinov2.train import get_args_parser as get_train_args_parser, main as train_main
 
-import pdb; pdb.set_trace()
 
 
 logger = logging.getLogger("dinov2")
