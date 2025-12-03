@@ -32,38 +32,41 @@ def build_mlp(hidden_size, projector_dim, z_dim):
 class DINOv2WithAlignment(nn.Module):
     """
     Wrapper around DINOv2 model that adds alignment support.
-    Extracts features at specified layer and projects them to match DiT dimensions.
+    Extracts features at specified layer and projects them to match the target model dimensions.
     Uses DINOv2's built-in get_intermediate_layers method for FSDP compatibility.
     """
     def __init__(
         self,
         base_model: DinoVisionTransformer,
         alignment_depth: int = 4,
-        dit_hidden_dim: int = 1152,  # DiT-XL hidden dimension
-        projector_dim: int = 2048,  # Projector hidden dimension (same as REPA)
+        dit_hidden_dim: Optional[int] = 1152,  # Backward compatible default
+        projector_dim: Optional[int] = 2048,  # Projector hidden dimension (same as REPA)
+        target_hidden_dim: Optional[int] = None,  # Generic target hidden dimension
     ):
         """
         Args:
             base_model: Base DINOv2 model (only used to get embed_dim for projector initialization)
             alignment_depth: Which DINOv2 layer to extract features from (0-indexed)
                             -1 means no alignment
-            dit_hidden_dim: DiT hidden dimension to project to
+            dit_hidden_dim: DiT hidden dimension to project to (kept for backward compatibility)
+            target_hidden_dim: Generic target hidden dimension override
             projector_dim: Projector MLP hidden dimension
         """
         super().__init__()
         self.alignment_depth = alignment_depth
-        self.dit_hidden_dim = dit_hidden_dim
         self.projector_dim = projector_dim
+        self.target_hidden_dim = target_hidden_dim if target_hidden_dim is not None else dit_hidden_dim
+        self.dit_hidden_dim = self.target_hidden_dim  # alias for older checkpoints
         
         if self.alignment_depth == -1:
             self.projector = None
         else:
-            if dit_hidden_dim is not None and projector_dim is not None:
+            if self.target_hidden_dim is not None and projector_dim is not None:
                 dinov2_embed_dim = base_model.embed_dim
                 self.projector = build_mlp(
                     hidden_size=dinov2_embed_dim,
                     projector_dim=projector_dim,
-                    z_dim=dit_hidden_dim
+                    z_dim=self.target_hidden_dim
                 )
             else:
                 # No projector - return raw features (for sanity check with DINOv2 teacher)
@@ -119,11 +122,15 @@ class DINOv2WithAlignment(nn.Module):
             # Ensure dtype matches projector (FSDP might use mixed precision for backbone)
             projector_dtype = next(self.projector.parameters()).dtype
             patch_tokens = patch_tokens.to(dtype=projector_dtype)
-            projected = self.projector(patch_tokens.reshape(-1, D))  # (B*N, dit_hidden_dim)
-            projected = projected.reshape(B, N, self.dit_hidden_dim)  # (B, N, dit_hidden_dim)
+            projected = self.projector(patch_tokens.reshape(-1, D))  # (B*N, target_hidden_dim)
+            projected = projected.reshape(B, N, self.target_hidden_dim)  # (B, N, target_hidden_dim)
             alignment_features = [projected]
         else:
             # Return raw features (normalization happens in loss, matching REPA)
             alignment_features = [patch_tokens]
         
         return alignment_features
+
+
+# Backward compatibility with previous name
+DINOv2WithAlignment_DiT = DINOv2WithAlignment

@@ -21,8 +21,9 @@ from dinov2.models.vision_transformer import BlockChunk
 # Alignment imports
 from dinov2.alignment_model import DINOv2WithAlignment
 from dinov2.alignment_loss import AlignmentLoss
-from dinov2.extract_dit_features import DiTFeatureExtractor
 from dinov2.alignment_utils import preprocess_for_alignment
+from dinov2.extract_dit_features import DiTFeatureExtractor
+from dinov2.extract_deepfloyd_features import DeepFloydFeatureExtractor
 
 
 try:
@@ -56,9 +57,10 @@ class SSLMetaArch(nn.Module):
         # Alignment setup
         self.do_alignment = False
         self.alignment_wrapper = None  # Only used for alignment feature extraction
-        self.dit_extractor = None
+        self.target_model_extractor = None
         self.alignment_loss_fn = None
         self.alignment_loss_weight = 0.0
+        self.alignment_target_type = None
         
         alignment_cfg = getattr(cfg, 'alignment', None)
         if alignment_cfg is not None and getattr(alignment_cfg, 'enabled', False):
@@ -66,26 +68,56 @@ class SSLMetaArch(nn.Module):
             logger.info("OPTIONS -- ALIGNMENT -- enabled")
             logger.info(f"OPTIONS -- ALIGNMENT -- depth: {alignment_cfg.alignment_depth}")
             logger.info(f"OPTIONS -- ALIGNMENT -- loss_weight: {alignment_cfg.alignment_loss_weight}")
-            logger.info(f"OPTIONS -- ALIGNMENT -- dit_timestep: {alignment_cfg.dit_timestep}")
             
+            self.alignment_target_type = getattr(alignment_cfg, "target_model", "dit").lower()
+            logger.info(f"OPTIONS -- ALIGNMENT -- target_model: {self.alignment_target_type}")
+
+            target_hidden_dim = getattr(alignment_cfg, "target_hidden_dim", None)
+            if target_hidden_dim is None:
+                target_hidden_dim = getattr(alignment_cfg, "dit_hidden_dim", None)
+            if target_hidden_dim is None and self.alignment_target_type == "deepfloyd":
+                target_hidden_dim = getattr(alignment_cfg, "deepfloyd_hidden_dim", None)
 
             self.alignment_wrapper = DINOv2WithAlignment(
                 base_model=student_backbone,
                 alignment_depth=alignment_cfg.alignment_depth,
-                dit_hidden_dim=alignment_cfg.dit_hidden_dim,
+                dit_hidden_dim=getattr(alignment_cfg, "dit_hidden_dim", target_hidden_dim),
                 projector_dim=alignment_cfg.projector_dim,
+                target_hidden_dim=target_hidden_dim,
             )
 
-            # Initialize DiT feature extractor
-            dit_image_size = 16 * cfg.student.patch_size
-            self.dit_extractor = DiTFeatureExtractor(
-                dit_model_path=alignment_cfg.dit_model_path,
-                dit_model_name=alignment_cfg.dit_model_name,
-                image_size=dit_image_size,
-                dit_extraction_layer=alignment_cfg.dit_extraction_layer,
-                dit_timestep=alignment_cfg.dit_timestep,
-                device="cuda",
-            )
+            if self.alignment_target_type == "dit":
+                logger.info(f"OPTIONS -- ALIGNMENT -- dit_timestep: {alignment_cfg.dit_timestep}")
+                dit_image_size = 16 * cfg.student.patch_size
+                self.target_model_extractor = DiTFeatureExtractor(
+                    dit_model_path=alignment_cfg.dit_model_path,
+                    dit_model_name=alignment_cfg.dit_model_name,
+                    image_size=dit_image_size,
+                    dit_extraction_layer=alignment_cfg.dit_extraction_layer,
+                    dit_timestep=alignment_cfg.dit_timestep,
+                    device="cuda",
+                )
+            elif self.alignment_target_type == "deepfloyd":
+                logger.info(f"OPTIONS -- ALIGNMENT -- deepfloyd_timestep: {alignment_cfg.deepfloyd_timestep}")
+                deepfloyd_dtype = getattr(alignment_cfg, "deepfloyd_torch_dtype", None)
+                if isinstance(deepfloyd_dtype, str):
+                    try:
+                        deepfloyd_dtype = getattr(torch, deepfloyd_dtype)
+                    except AttributeError as exc:
+                        raise ValueError(f"Unknown torch dtype string '{deepfloyd_dtype}'") from exc
+                self.target_model_extractor = DeepFloydFeatureExtractor(
+                    model_path=alignment_cfg.deepfloyd_model_path,
+                    stage=getattr(alignment_cfg, "deepfloyd_stage", "I"),
+                    variant=getattr(alignment_cfg, "deepfloyd_variant", None),
+                    torch_dtype=deepfloyd_dtype,
+                    extraction_block=getattr(alignment_cfg, "deepfloyd_extraction_block", "mid"),
+                    timestep=alignment_cfg.deepfloyd_timestep,
+                    unconditional_prompt=getattr(alignment_cfg, "deepfloyd_unconditional_prompt", ""),
+                    image_size=getattr(alignment_cfg, "deepfloyd_image_size", None),
+                    device="cuda",
+                )
+            else:
+                raise ValueError(f"Unsupported alignment target model '{self.alignment_target_type}'")
             
             # Initialize alignment loss
             self.alignment_loss_fn = AlignmentLoss(
@@ -402,20 +434,19 @@ class SSLMetaArch(nn.Module):
             # accumulate loss
             loss_accumulator += self.ibot_loss_weight * ibot_patch_loss
 
-        # Alignment loss: DiT features as "teacher", student alignment features as "student"
-        if self.do_alignment and alignment_features is not None:
-            # Extract DiT features from full original image (same as DINOv2 alignment)
+        # Alignment loss: target diffusion features as "teacher", student alignment features as "student"
+        if self.do_alignment and alignment_features is not None and self.target_model_extractor is not None:
             if "collated_full_images_raw" in images:
                 full_images_raw = images["collated_full_images_raw"].cuda(non_blocking=True)
 
                 with torch.no_grad():
-                    dit_features = self.dit_extractor.extract_features(full_images_raw)
-                
+                    target_features = self.target_model_extractor.extract_features(full_images_raw)
+
                 alignment_loss = self.alignment_loss_fn(
                     dinov2_features=alignment_features,
-                    dit_features=dit_features
+                    dit_features=target_features,
                 )
-                
+
                 loss_accumulator += alignment_loss * self.alignment_loss_weight
                 loss_dict["alignment_loss"] = alignment_loss
 
