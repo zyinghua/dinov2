@@ -7,24 +7,11 @@ directly from diffusers for flexibility across stages.
 from __future__ import annotations
 from typing import Dict, List, Optional, Union
 
+import os
 import torch
 import torch.nn.functional as F
-
-
-def _import_if_pipelines():
-    try:
-        from diffusers import IFPipeline, IFImg2ImgPipeline, IFSuperResolutionPipeline
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise ImportError(
-            "DeepFloydFeatureExtractor requires diffusers. "
-            "Install diffusers to enable DeepFloyd alignment."
-        ) from exc
-    return {
-        "i": IFPipeline,
-        "ii": IFImg2ImgPipeline,
-        "iii": IFSuperResolutionPipeline,
-    }
-
+from diffusers import DiffusionPipeline
+from transformers import T5EncoderModel
 
 def requires_grad(module: torch.nn.Module, flag: bool = False):
     for p in module.parameters():
@@ -47,36 +34,55 @@ class DeepFloydFeatureExtractor:
         unconditional_prompt: str = "",
         image_size: Optional[int] = None,
         device: str = "cuda",
+        cache_dir: Optional[str] = "/root/autodl-tmp",
     ):
-        pipelines = _import_if_pipelines()
-        stage_key = stage.lower()
-        if stage_key not in pipelines:
-            raise ValueError(
-                f"Unknown DeepFloyd stage '{stage}'. Expected one of {list(pipelines.keys())}."
-            )
 
         pipeline_kwargs: Dict[str, object] = {}
+        if cache_dir is not None:
+            os.environ["HF_HOME"] = cache_dir
+            pipeline_kwargs["cache_dir"] = cache_dir
         if variant is not None:
             pipeline_kwargs["variant"] = variant
         if torch_dtype is not None:
             pipeline_kwargs["torch_dtype"] = torch_dtype
-
-        pipeline = pipelines[stage_key].from_pretrained(model_path, **pipeline_kwargs)
-
+        
+        # pipeline_kwargs["local_files_only"] = False
         self.device = torch.device(device)
+
+        self.text_encoder = T5EncoderModel.from_pretrained(
+            model_path,
+            subfolder="text_encoder",
+            low_cpu_mem_usage=True,
+            **pipeline_kwargs
+        )
+        self.text_encoder = self.text_encoder.to(self.device)
+        self.text_encoder.eval()
+        requires_grad(self.text_encoder, False)
+
+        pipeline = DiffusionPipeline.from_pretrained(
+            model_path, 
+            text_encoder=self.text_encoder, 
+            low_cpu_mem_usage=True,
+            **pipeline_kwargs
+        )
+
         self.unet = pipeline.unet.to(self.device)
         self.unet.eval()
         requires_grad(self.unet, False)
 
         self.tokenizer = getattr(pipeline, "tokenizer", None)
-        self.text_encoder = getattr(pipeline, "text_encoder", None)
+        
+        del pipeline
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
+
         if self.tokenizer is None or self.text_encoder is None:
             raise ValueError(
                 "Loaded DeepFloyd pipeline does not expose tokenizer/text_encoder components."
             )
 
         self.unconditional_prompt = unconditional_prompt or ""
-        self.timestep = float(timestep)
+        self.timestep = timestep
         self.latent_dtype = next(self.unet.parameters()).dtype
 
         self.stage_image_size = image_size
@@ -131,12 +137,13 @@ class DeepFloydFeatureExtractor:
             images = (images + 1.0) / 2.0
 
         if images.shape[-1] != self.stage_image_size:
-            images = F.interpolate(
-                images,
-                size=(self.stage_image_size, self.stage_image_size),
-                mode="bicubic",
-                align_corners=False,
-            )
+            # images = F.interpolate(
+            #     images,
+            #     size=(self.stage_image_size, self.stage_image_size),
+            #     mode="bicubic",
+            #     align_corners=False,
+            # )
+            raise ValueError(f"Image size {images.shape[-1]} does not match stage image size {self.stage_image_size}")
 
         images = images * 2.0 - 1.0  # Normalize to [-1, 1]
         return images
@@ -167,7 +174,15 @@ class DeepFloydFeatureExtractor:
         images = self._preprocess_images(images)
         batch_size = images.shape[0]
 
-        latents = images.to(dtype=self.latent_dtype)
+        # Downscale and upscale self to serve as a guide for the stage II
+        # Potential smoothing effect on the image
+        guide_64 = F.interpolate(images, size=(64, 64), mode="bicubic")
+        guide_upscaled = F.interpolate(guide_64, size=(256, 256), mode="bicubic")
+
+        # DeepFloyd IF-II expects 6 channels: RGB (3) + guide (3)
+        latents = torch.cat([images, guide_upscaled], dim=1)
+        
+        latents = latents.to(dtype=self.latent_dtype)
         timesteps = torch.full(
             (batch_size,),
             self.timestep,
@@ -184,11 +199,18 @@ class DeepFloydFeatureExtractor:
 
         handle = target_block.register_forward_hook(hook_fn)
         try:
-            _ = self.unet(
-                sample=latents,
-                timestep=timesteps,
-                encoder_hidden_states=text_embeddings,
-            )
+            unet_kwargs = {
+                "sample": latents,
+                "timestep": timesteps,
+                "encoder_hidden_states": text_embeddings,
+            }
+
+            # Add class_labels if the UNet has class embeddings, this is required for deepfloyd if.
+            if hasattr(self.unet, "class_embedding") and self.unet.class_embedding is not None:
+                unet_kwargs["class_labels"] = torch.zeros(
+                    batch_size, dtype=torch.long, device=self.device
+                )
+            _ = self.unet(**unet_kwargs)
         finally:
             handle.remove()
 
@@ -199,10 +221,42 @@ class DeepFloydFeatureExtractor:
         if not torch.is_tensor(features):
             raise RuntimeError("DeepFloyd block hook did not return a tensor.")
 
-        features = features.to(dtype=torch.float32)
+        # features = features.to(dtype=torch.float32)
         batch, channels, height, width = features.shape
         features = features.reshape(batch, channels, height * width).transpose(1, 2).contiguous()
         return features
 
+def test_extraction(
+    stage: str = "II",
+    block: Union[int, str] = "mid",
+    model_path: str = "DeepFloyd/IF-II-L-v1.0",
+    image_size: int = 256,
+    batch_size: int = 1,
+):
+    print(f"Testing Stage {stage}, Block {block}")
+    print(f"Model: {model_path}")
+    print(f"Image size: {image_size}")
+    
+    extractor = DeepFloydFeatureExtractor(
+        model_path=model_path,
+        stage=stage,
+        extraction_block=block,
+        image_size=image_size,
+    )
+    
+    print(f"Total blocks: {len(extractor.blocks)}")
+    print(f"Extraction block index: {extractor.extraction_block_idx}")
+    
+    # Create dummy input
+    dummy_images = torch.randn(batch_size, 3, image_size, image_size)
+    
+    features = extractor.extract_features(dummy_images)
+    
+    print(f"Output shape: {features.shape}")
+    print(f"  - Batch: {features.shape[0]}")
+    print(f"  - Sequence length: {features.shape[1]}")
+    print(f"  - Feature dim: {features.shape[2]}")
+    
+    return features
 
 __all__ = ["DeepFloydFeatureExtractor"]
