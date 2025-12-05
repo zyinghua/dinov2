@@ -225,6 +225,7 @@ class DeepFloydFeatureExtractor:
         features = features.reshape(batch, channels, height * width).transpose(1, 2).contiguous()
         return features
 
+
 def test_extraction(
     stage: str = "II",
     block: Union[int, str] = "down_blocks_16_mid",
@@ -238,7 +239,6 @@ def test_extraction(
     
     extractor = DeepFloydFeatureExtractor(
         model_path=model_path,
-        stage=stage,
         extraction_block=block,
         image_size=image_size,
     )
