@@ -72,18 +72,24 @@ class SSLMetaArch(nn.Module):
             self.alignment_target_type = getattr(alignment_cfg, "target_model", "dit").lower()
             logger.info(f"OPTIONS -- ALIGNMENT -- target_model: {self.alignment_target_type}")
 
-            target_hidden_dim = getattr(alignment_cfg, "target_hidden_dim", None)
-            if target_hidden_dim is None:
+            if self.alignment_target_type == "dit":
                 target_hidden_dim = getattr(alignment_cfg, "dit_hidden_dim", None)
-            if target_hidden_dim is None and self.alignment_target_type == "deepfloyd":
+                if target_hidden_dim is None:
+                    raise ValueError("dit_hidden_dim is not set when target_model is 'dit'")
+            elif self.alignment_target_type == "deepfloyd":
                 target_hidden_dim = getattr(alignment_cfg, "deepfloyd_hidden_dim", None)
+                if target_hidden_dim is None:
+                    raise ValueError("deepfloyd_hidden_dim is not set when target_model is 'deepfloyd'")
+            else:
+                raise ValueError(f"Unsupported alignment target model '{self.alignment_target_type}'")
+            
+            logger.info(f"OPTIONS -- ALIGNMENT -- target_hidden_dim: {target_hidden_dim}")
 
             self.alignment_wrapper = DINOv2WithAlignment(
                 base_model=student_backbone,
-                alignment_depth=alignment_cfg.alignment_depth,
-                dit_hidden_dim=getattr(alignment_cfg, "dit_hidden_dim", target_hidden_dim),
-                projector_dim=alignment_cfg.projector_dim,
                 target_hidden_dim=target_hidden_dim,
+                alignment_depth=alignment_cfg.alignment_depth,
+                projector_dim=alignment_cfg.projector_dim,
             )
 
             if self.alignment_target_type == "dit":
@@ -107,10 +113,10 @@ class SSLMetaArch(nn.Module):
                         raise ValueError(f"Unknown torch dtype string '{deepfloyd_dtype}'") from exc
                 self.target_model_extractor = DeepFloydFeatureExtractor(
                     model_path=alignment_cfg.deepfloyd_model_path,
-                    stage=getattr(alignment_cfg, "deepfloyd_stage", "I"),
+                    stage=getattr(alignment_cfg, "deepfloyd_stage", "II"),
                     variant=getattr(alignment_cfg, "deepfloyd_variant", None),
                     torch_dtype=deepfloyd_dtype,
-                    extraction_block=getattr(alignment_cfg, "deepfloyd_extraction_block", "mid"),
+                    extraction_block=getattr(alignment_cfg, "deepfloyd_extraction_block", "down_blocks_16_mid"),
                     timestep=alignment_cfg.deepfloyd_timestep,
                     unconditional_prompt=getattr(alignment_cfg, "deepfloyd_unconditional_prompt", ""),
                     image_size=getattr(alignment_cfg, "deepfloyd_image_size", None),
