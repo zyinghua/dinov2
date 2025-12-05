@@ -26,10 +26,9 @@ class DeepFloydFeatureExtractor:
     def __init__(
         self,
         model_path: str,
-        stage: str = "I",
         variant: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = torch.float16,
-        extraction_block: Union[int, str] = "mid",
+        extraction_block: Union[int, str] = "down_blocks_16_mid",
         timestep: float = 0.0,
         unconditional_prompt: str = "",
         image_size: Optional[int] = None,
@@ -71,6 +70,10 @@ class DeepFloydFeatureExtractor:
         requires_grad(self.unet, False)
 
         self.tokenizer = getattr(pipeline, "tokenizer", None)
+
+        self.stage_image_size = image_size
+        if self.stage_image_size is None:
+            self.stage_image_size = getattr(pipeline, "image_size", None)
         
         del pipeline
         if self.device.type == "cuda":
@@ -85,9 +88,6 @@ class DeepFloydFeatureExtractor:
         self.timestep = timestep
         self.latent_dtype = next(self.unet.parameters()).dtype
 
-        self.stage_image_size = image_size
-        if self.stage_image_size is None:
-            self.stage_image_size = getattr(pipeline, "image_size", None)
         if self.stage_image_size is None:
             # Fallback to UNet sample size if pipeline does not expose an image_size attribute
             self.stage_image_size = getattr(getattr(self.unet, "config", None), "sample_size", None)
@@ -117,15 +117,14 @@ class DeepFloydFeatureExtractor:
     def _resolve_block_index(self, block: Union[int, str]) -> int:
         if isinstance(block, str):
             block = block.lower()
-            if block == "first":
-                return 0
-            if block == "mid":
-                # mid block is after all down blocks
-                down_blocks = getattr(self.unet, "down_blocks", [])
+            down_blocks = getattr(self.unet, "down_blocks", [])
+            if block == "down_blocks_16_1": # 960 feature dim
+                return len(down_blocks) - 2
+            if block == "down_blocks_16_2": # 1280 feature dim
+                return len(down_blocks) - 1
+            if block == "down_blocks_16_mid": # 1280 feature dim
                 return len(down_blocks)
-            if block == "last":
-                return len(self.blocks) - 1
-            raise ValueError(f"Unknown extraction block keyword '{block}'.")
+            raise ValueError(f"Unknown extraction block keyword '{block}'. Valid options: 'down_blocks_16_1', 'down_blocks_16_2', 'down_blocks_16_mid'.")
         idx = int(block)
         return max(0, min(idx, len(self.blocks) - 1))
 
@@ -228,7 +227,7 @@ class DeepFloydFeatureExtractor:
 
 def test_extraction(
     stage: str = "II",
-    block: Union[int, str] = "mid",
+    block: Union[int, str] = "down_blocks_16_mid",
     model_path: str = "DeepFloyd/IF-II-L-v1.0",
     image_size: int = 256,
     batch_size: int = 1,
@@ -258,5 +257,23 @@ def test_extraction(
     print(f"  - Feature dim: {features.shape[2]}")
     
     return features
+
+
+# if __name__ == "__main__":
+#     stage = "II"
+#     block = "down_blocks_16_mid"
+    
+#     # Map stages to default model paths
+#     model_paths = {
+#         "I": "DeepFloyd/IF-I-XL-v1.0",
+#         "II": "DeepFloyd/IF-II-L-v1.0",
+#         "III": "DeepFloyd/IF-III-L-v1.0",
+#     }
+    
+#     model_path = model_paths.get(stage, model_paths["II"])
+#     image_size = {"I": 64, "II": 256, "III": 1024}.get(stage, 256)
+    
+#     test_extraction(stage=stage, block=block, model_path=model_path, image_size=image_size)
+
 
 __all__ = ["DeepFloydFeatureExtractor"]
