@@ -22,21 +22,22 @@ alignment:
   dit_model_path: "/root/autodl-tmp/pretrained_models/DiT-XL-2-256x256.pt"  # Path to pretrained DiT checkpoint
   dit_model_name: "DiT-XL/2"  # DiT architecture name (e.g., "DiT-XL/2", "DiT-L/2", "DiT-B/2")
   dit_extraction_layer: 14  # Which DiT layer to extract features from (-1 = last layer, 0-indexed)
-  dit_timestep: 350.0  # Fixed timestep for DiT forward pass (0-999, 350 = moderate noise level, good balance for noisy training data)
+  dit_timestep: 500.0  # Fixed timestep for DiT forward pass (0-999, 350 = moderate noise level, good balance for noisy training data)
   
   # DeepFloyd IF model settings (used only when target_model == "deepfloyd")
-  deepfloyd_model_path: "/root/autodl-tmp/pretrained_models/DeepFloyd/IF-I-XL-v1.0"  # Path or HF repo id
-  deepfloyd_stage: "I"  # IF stage to use ("I", "II", or "III")
-  deepfloyd_extraction_block: "mid"  # Block to hook for features ("first", "mid", "last" or index)
-  deepfloyd_timestep: 50.0  # Diffusion timestep fed to IF UNet
-  deepfloyd_image_size: 64  # Resize for IF stage (64 for stage I, 256 for stage II, etc.)
+  deepfloyd_model_path: "DeepFloyd/IF-I-XL-v1.0"  # Path or HF repo id
+  deepfloyd_stage: "II"  # IF stage to use ("I", "II", or "III")
+  deepfloyd_extraction_block: "down_blocks_16_mid"  # Block to hook for features ("first", "mid", "last" or index)
+  deepfloyd_timestep: 350.0  # Diffusion timestep fed to IF UNet
+  deepfloyd_image_size: 256
   deepfloyd_unconditional_prompt: ""  # Prompt used for unconditional embeddings
+  deepfloyd_hidden_dim: 1280  # DeepFloyd hidden dimension, 1152 for XL
   # deepfloyd_torch_dtype: "float16"  # Optional dtype override (string matching torch dtype)
   
   # Projector settings
-  target_hidden_dim: 1152  # Hidden dim to project to (overrides dit_hidden_dim when set)
+  #target_hidden_dim: 1152  # Hidden dim to project to (overrides dit_hidden_dim when set)
   dit_hidden_dim: 1152  # DiT hidden dimension, 1152 for XL
   projector_dim: 2048  # MLP projector hidden dimension (same as REPA)
   
   # Loss function settings
-  alignment_loss_type: "cosine_sim"  # Loss type: "cosine_sim", "mse", or "l1"
+  alignment_loss_type: "cosine_sim"  # Loss type: "cosine_sim" or "cka"
