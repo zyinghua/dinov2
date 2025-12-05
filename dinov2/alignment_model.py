@@ -15,7 +15,7 @@ def build_mlp(hidden_size, projector_dim, z_dim):
     Args:
         hidden_size: Input dimension (DINOv2 embed_dim)
         projector_dim: Hidden dimension of projector
-        z_dim: Output dimension (DiT hidden_dim)
+        z_dim: Output dimension (target model hidden_dim, e.g., DiT or DeepFloyd)
     
     Returns:
         MLP projector module
@@ -38,25 +38,22 @@ class DINOv2WithAlignment(nn.Module):
     def __init__(
         self,
         base_model: DinoVisionTransformer,
+        target_hidden_dim: int,
         alignment_depth: int = 4,
-        dit_hidden_dim: Optional[int] = 1152,  # Backward compatible default
         projector_dim: Optional[int] = 2048,  # Projector hidden dimension (same as REPA)
-        target_hidden_dim: Optional[int] = None,  # Generic target hidden dimension
     ):
         """
         Args:
             base_model: Base DINOv2 model (only used to get embed_dim for projector initialization)
             alignment_depth: Which DINOv2 layer to extract features from (0-indexed)
                             -1 means no alignment
-            dit_hidden_dim: DiT hidden dimension to project to (kept for backward compatibility)
-            target_hidden_dim: Generic target hidden dimension override
+            target_hidden_dim: Target model hidden dimension to project to (works for DiT, DeepFloyd, etc.)
             projector_dim: Projector MLP hidden dimension
         """
         super().__init__()
         self.alignment_depth = alignment_depth
         self.projector_dim = projector_dim
-        self.target_hidden_dim = target_hidden_dim if target_hidden_dim is not None else dit_hidden_dim
-        self.dit_hidden_dim = self.target_hidden_dim  # alias for older checkpoints
+        self.target_hidden_dim = target_hidden_dim
         
         if self.alignment_depth == -1:
             self.projector = None
@@ -114,7 +111,7 @@ class DINOv2WithAlignment(nn.Module):
         finally:
             handle.remove()
         
-        # Project to DiT dimension if projector is enabled
+        # Project to target model dimension if projector is enabled
         # Note: Following REPA's approach, we do NOT normalize before projection
         # Normalization happens in the loss function instead
         if self.projector is not None:
