@@ -126,9 +126,16 @@ class SSLMetaArch(nn.Module):
                 raise ValueError(f"Unsupported alignment target model '{self.alignment_target_type}'")
             
             # Initialize alignment loss
-            self.alignment_loss_fn = AlignmentLoss(
-                loss_type=alignment_cfg.alignment_loss_type
-            )
+            # Pass RKD-specific parameters if they exist
+            loss_kwargs = {
+                "loss_type": alignment_cfg.alignment_loss_type
+            }
+            if alignment_cfg.alignment_loss_type == "rkd":
+                loss_kwargs["temp"] = getattr(alignment_cfg, "rkd_temp", 1.0)
+                loss_kwargs["use_angle"] = getattr(alignment_cfg, "rkd_use_angle", True)
+                loss_kwargs["use_distance"] = getattr(alignment_cfg, "rkd_use_distance", True)
+            
+            self.alignment_loss_fn = AlignmentLoss(**loss_kwargs)
             self.alignment_loss_weight = alignment_cfg.alignment_loss_weight
         else:
             logger.info("OPTIONS -- ALIGNMENT -- disabled")
@@ -465,9 +472,15 @@ class SSLMetaArch(nn.Module):
     def fsdp_synchronize_streams(self):
         if self.need_to_synchronize_fsdp_streams:
             torch.cuda.synchronize()
-            self.student.dino_head._streams = (
-                self.teacher.dino_head._streams
-            ) = self.student.backbone._streams = self.teacher.backbone._streams
+            # Try to synchronize streams if they exist (FSDP in newer PyTorch versions)
+            try:
+                streams = self.teacher.backbone._streams
+                self.student.dino_head._streams = (
+                    self.teacher.dino_head._streams
+                ) = self.student.backbone._streams = streams
+            except AttributeError:
+                # _streams attribute doesn't exist in this PyTorch version
+                pass
             self.need_to_synchronize_fsdp_streams = False
 
     def update_teacher(self, m):

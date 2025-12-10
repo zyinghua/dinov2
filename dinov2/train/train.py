@@ -11,6 +11,7 @@ from functools import partial
 
 from fvcore.common.checkpoint import PeriodicCheckpointer
 import torch
+import wandb
 
 from dinov2.data import SamplerType, make_data_loader, make_dataset
 from dinov2.data import collate_data_and_cast, DataAugmentationDINO, MaskingGenerator
@@ -37,6 +38,23 @@ def get_args_parser(add_help: bool = True):
     )
     parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
     parser.add_argument("--eval", type=str, default="", help="Eval type to perform")
+    parser.add_argument(
+        "--use-wandb",
+        action="store_true",
+        help="Whether to use Weights & Biases for logging",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        default="dinov2-alignment",
+        help="WandB project name",
+    )
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default="heejeong_nam-brown-university",
+        help="WandB entity (team/username)",
+    )
     parser.add_argument(
         "opts",
         help="""
@@ -143,10 +161,25 @@ def do_test(cfg, model, iteration):
         torch.save({"teacher": new_state_dict}, teacher_ckp_path)
 
 
-def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5):
+def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5, use_wandb=False, wandb_project="dinov2-alignment", wandb_entity=None):
     model.train()
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
+    
+    # Initialize WandB if requested
+    if use_wandb and distributed.is_main_process():
+        try:
+            wandb.init(
+                project=wandb_project,
+                entity=wandb_entity,
+                config=dict(cfg),
+                name=os.path.basename(cfg.train.output_dir),
+                resume="allow",
+            )
+            logger.info(f"WandB initialized: {wandb.run.name}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize WandB: {e}")
+            use_wandb = False
 
     # setup optimizer
 
@@ -294,6 +327,23 @@ def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5):
         metric_logger.update(last_layer_lr=last_layer_lr)
         metric_logger.update(current_batch_size=current_batch_size)
         metric_logger.update(total_loss=losses_reduced, **loss_dict_reduced)
+        
+        # Log to WandB
+        if use_wandb and distributed.is_main_process() and iteration % 10 == 0:
+            wandb_log_dict = {
+                "iteration": iteration,
+                "epoch": iteration // OFFICIAL_EPOCH_LENGTH,
+                "lr": lr,
+                "weight_decay": wd,
+                "momentum": mom,
+                "last_layer_lr": last_layer_lr,
+                "batch_size": int(current_batch_size),
+                "total_loss": losses_reduced,
+            }
+            # Add individual loss components
+            for loss_name, loss_val in loss_dict_reduced.items():
+                wandb_log_dict[f"loss/{loss_name}"] = loss_val
+            wandb.log(wandb_log_dict, step=iteration)
 
         # checkpointing and testing
 
@@ -303,7 +353,17 @@ def do_train(cfg, model, resume=False, max_to_keep=10, save_frequency=5):
         periodic_checkpointer.step(iteration)
 
         iteration = iteration + 1
+    
     metric_logger.synchronize_between_processes()
+    
+    # Finalize WandB
+    if use_wandb and distributed.is_main_process():
+        try:
+            wandb.finish()
+            logger.info("WandB training completed")
+        except Exception as e:
+            logger.warning(f"Failed to finalize WandB: {e}")
+    
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
@@ -324,7 +384,15 @@ def main(args):
         )
         return do_test(cfg, model, f"manual_{iteration}")
 
-    do_train(cfg, model, resume=not args.no_resume, max_to_keep=args.max_to_keep, save_frequency=args.save_frequency)
+    do_train(
+        cfg, model,
+        resume=not args.no_resume,
+        max_to_keep=args.max_to_keep,
+        save_frequency=args.save_frequency,
+        use_wandb=args.use_wandb,
+        wandb_project=args.wandb_project,
+        wandb_entity=args.wandb_entity,
+    )
 
 if __name__ == "__main__":
     args = get_args_parser(add_help=True).parse_args()

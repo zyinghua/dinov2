@@ -15,3 +15,5 @@ DiT/pretrained_models/
 
 *.out
 *.err
+wandb/*
+temp
