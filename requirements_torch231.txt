@@ -91,6 +91,7 @@ typing_extensions==4.15.0
 tzdata==2025.2
 umap-learn==0.5.9.post2
 urllib3==2.5.0
+wandb>=0.15.0
 xformers==0.0.26.post1
 yacs==0.1.8
 zipp==3.23.0

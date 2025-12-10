@@ -1,0 +1,49 @@
+train:
+  batch_size_per_gpu: 64
+  num_workers: 8
+student:
+  arch: vit_small
+  patch_size: 16
+  drop_path_rate: 0
+optim:
+  epochs: 120
+evaluation:
+  eval_period_iterations: 6250
+
+# Alignment configuration for DINOv2-DiT alignment
+alignment:
+  enabled: true  # Set to false to disable alignment
+  target_model: "dit"  # Options: "dit" or "deepfloyd"
+  
+  # DINOv2 alignment settings
+  alignment_depth: 4  # Which DINOv2 layer to extract features from (0-indexed, -1 = no alignment)
+  alignment_loss_weight: 0.2  # Weight for alignment loss in total loss
+  
+  # DiT model settings
+  dit_model_path: "/cs/data/people/hnam16/dinov2_data/pretrained/DiT-XL-2-256x256.pt"  # Path to pretrained DiT checkpoint
+  dit_model_name: "DiT-XL/2"  # DiT architecture name (e.g., "DiT-XL/2", "DiT-L/2", "DiT-B/2")
+  dit_extraction_layer: 14  # Which DiT layer to extract features from (-1 = last layer, 0-indexed)
+  dit_timestep: 500.0  # Fixed timestep for DiT forward pass (0-999, 350 = moderate noise level, good balance for noisy training data)
+  
+  # DeepFloyd IF model settings (used only when target_model == "deepfloyd")
+  deepfloyd_model_path: "DeepFloyd/IF-I-XL-v1.0"  # Path or HF repo id
+  deepfloyd_stage: "II"  # IF stage to use ("I", "II", or "III")
+  deepfloyd_extraction_block: "down_blocks_16_mid"  # Block to hook for features ("first", "mid", "last" or index)
+  deepfloyd_timestep: 350.0  # Diffusion timestep fed to IF UNet
+  deepfloyd_image_size: 256
+  deepfloyd_unconditional_prompt: ""  # Prompt used for unconditional embeddings
+  deepfloyd_hidden_dim: 1280  # DeepFloyd hidden dimension, 1152 for XL
+  # deepfloyd_torch_dtype: "float16"  # Optional dtype override (string matching torch dtype)
+  
+  # Projector settings
+  #target_hidden_dim: 1152  # Hidden dim to project to (overrides dit_hidden_dim when set)
+  dit_hidden_dim: 1152  # DiT hidden dimension, 1152 for XL
+  projector_dim: 2048  # MLP projector hidden dimension (same as REPA)
+  
+  # Loss function settings
+  alignment_loss_type: "rkd"  # Loss type: "cosine_sim" or "cka"
+  
+  # RKD-specific settings (only used when alignment_loss_type == "rkd")
+  rkd_temp: 1.0  # Temperature for distance scaling (higher = softer matching)
+  rkd_use_angle: false  # Set to false to use distance-only RKD (faster)
+  rkd_use_distance: true  # Set to true to use distance matching
