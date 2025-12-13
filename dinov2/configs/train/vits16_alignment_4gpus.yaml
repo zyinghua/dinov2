@@ -25,8 +25,7 @@ alignment:
   dit_timestep: 500.0  # Fixed timestep for DiT forward pass (0-999, 350 = moderate noise level, good balance for noisy training data)
   
   # DeepFloyd IF model settings (used only when target_model == "deepfloyd")
-  deepfloyd_model_path: "DeepFloyd/IF-I-XL-v1.0"  # Path or HF repo id
-  deepfloyd_stage: "II"  # IF stage to use ("I", "II", or "III")
+  deepfloyd_model_path: "DeepFloyd/IF-II-L-v1.0"  # Path or HF repo id
   deepfloyd_extraction_block: "down_blocks_16_mid"  # Block to hook for features ("first", "mid", "last" or index)
   deepfloyd_timestep: 350.0  # Diffusion timestep fed to IF UNet
   deepfloyd_image_size: 256

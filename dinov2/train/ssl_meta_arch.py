@@ -113,11 +113,10 @@ class SSLMetaArch(nn.Module):
                         raise ValueError(f"Unknown torch dtype string '{deepfloyd_dtype}'") from exc
                 self.target_model_extractor = DeepFloydFeatureExtractor(
                     model_path=alignment_cfg.deepfloyd_model_path,
-                    stage=getattr(alignment_cfg, "deepfloyd_stage", "II"),
                     variant=getattr(alignment_cfg, "deepfloyd_variant", None),
                     torch_dtype=deepfloyd_dtype,
                     extraction_block=getattr(alignment_cfg, "deepfloyd_extraction_block", "down_blocks_16_mid"),
-                    timestep=alignment_cfg.deepfloyd_timestep,
+                    timestep=getattr(alignment_cfg, "deepfloyd_timestep", 350),
                     unconditional_prompt=getattr(alignment_cfg, "deepfloyd_unconditional_prompt", ""),
                     image_size=getattr(alignment_cfg, "deepfloyd_image_size", None),
                     device="cuda",
