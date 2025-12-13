@@ -5,8 +5,8 @@
 
 from enum import Enum
 import logging
-from typing import Any, Dict, Optional
-
+from typing import Any, Dict, Optional, Union
+import numpy as np
 import torch
 from torch import Tensor
 from torchmetrics import Metric, MetricCollection
@@ -111,3 +111,50 @@ class ImageNetReaLAccuracy(Metric):
     def compute(self) -> Tensor:
         tp = dim_zero_cat(self.tp)  # type: ignore
         return tp.float().mean()
+
+
+def rankme(embeddings: Union[torch.Tensor, np.ndarray]) -> float:
+    """
+    RankMe: Effective rank metric based on SVD entropy.
+    
+    Measures the effective number of learned dimensions in the embedding space.
+    Stable estimation requires: num_samples >> embedding_dimension.
+    
+    Args:
+        embeddings: Tensor of shape (N, D) where N is num_samples, D is embedding_dim.
+                   N should be >= D for stable estimation .
+    
+    Returns:
+        rankme_score (float): Exponential of normalized entropy.
+                             Range: [1, embedding_dim]
+                             Higher is better (more diverse, full-rank representations).
+                             Value of D means perfectly rank-full embedding space.
+        """
+    with torch.no_grad():
+        if isinstance(embeddings, np.ndarray):
+            embeddings = torch.tensor(embeddings, dtype=torch.float32)
+        else:
+            embeddings = embeddings.float()
+        
+        # Ensure 2D
+        if embeddings.dim() == 1:
+            embeddings = embeddings.unsqueeze(0)
+        
+        # Center the embeddings
+        embeddings = embeddings - embeddings.mean(dim=0, keepdim=True)
+        
+        # Compute singular values
+        s = torch.linalg.svdvals(embeddings)
+        
+        # Normalize to probability distribution (L2 norm for SVD)
+        s = s[s > 1e-10]  # Remove near-zero singular values
+        p = s / (torch.sum(s) + 1e-10)
+        
+        # Compute entropy
+        epsilon = 1e-10
+        entropy = -torch.sum(p * torch.log(p + epsilon))
+        
+        # RankMe score: exponential of entropy
+        rankme_score = torch.exp(entropy).item()
+    
+    return rankme_score
